@@ -21,7 +21,7 @@ documents of likely matches, tracks changes, and emails a verified recipient.
 >
 > **19 Nov 2026 update:** the code is on GitHub (OPvickerG/OPvickerG-bidradar) with a Neon database connected.
 > The first cloud scan ran, but **GeM refuses all connections from outside India** (tested from 24 countries).
-> The scanner needs an India-located server, so monitoring is paused until one is set up (see DEPLOYMENT_FREE.md).
+> The scanner therefore runs on an **Android phone in India** as a GitHub self-hosted runner (see docs/PHONE_SCANNER.md).
 > No alert recipient is configured and no real email has been sent.
 
 ## What it does
