@@ -149,6 +149,8 @@ def score_category(model: CategoryModel, title: str, description: str = "", docu
 
 
 _WORD = re.compile(r"[A-Za-z]{6,}")
+_ENGLISH_GUARD = {"condition", "conditions", "conditioning", "position", "station", "section", "selection",
+                  "inspection", "injection", "direction", "protection", "construction", "operation"}
 _vocab_cache: Dict[int, Tuple[frozenset, list]] = {}
 
 
@@ -176,7 +178,9 @@ def correct_spelling(text: str, cats: List[CategoryModel]) -> Tuple[str, List[Tu
         if lw in vocab:
             return w
         hit = process.extractOne(lw, vocab, scorer=fuzz.ratio, score_cutoff=88)
-        if hit and hit[0] != lw and not hit[0].startswith(lw) and not lw.startswith(hit[0]):
+        if hit and lw not in hit[0] and hit[0] not in lw:     # never turn 'condition' into 'recondition'
+            if lw in _ENGLISH_GUARD:
+                return w
             fixes.append((w, hit[0]))
             return hit[0]
         return w
