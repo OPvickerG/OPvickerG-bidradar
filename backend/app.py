@@ -42,9 +42,12 @@ KIND_LABELS = {"phrase": "Exact phrases", "synonym": "Synonyms / related terms",
 VERIFY_TTL = timedelta(hours=48)
 
 _secret = S.session_secret
+if not _secret and not S.database_url.startswith("sqlite"):
+    # Derived from the (secret) database URL: stable across restarts, never stored or shown anywhere.
+    _secret = hashlib.sha256(("bidradar-session-v1:" + S.database_url).encode()).hexdigest()
 if not _secret:
     if S.environment == "production":
-        raise RuntimeError("SESSION_SECRET must be set (Secret Manager) in production")
+        raise RuntimeError("SESSION_SECRET (or a PostgreSQL DATABASE_URL) must be set in production")
     _secret = secrets.token_urlsafe(32)          # dev only: sessions reset on restart
 
 app = FastAPI(title="OPvickerG BidRadar", docs_url=None, redoc_url=None, openapi_url=None)
@@ -52,6 +55,14 @@ app.add_middleware(SessionMiddleware, secret_key=_secret, session_cookie="bidrad
                    same_site="lax", https_only=S.secure_cookies)
 app.mount("/static", StaticFiles(directory=os.path.join(ROOT, "frontend", "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(ROOT, "frontend", "templates"))
+
+
+@app.on_event("startup")
+def _start_background_scanner() -> None:
+    """Single-service mode (free hosting): the 30-minute scanner runs in a thread of the web app."""
+    if S.run_scheduler:
+        from scanner.scheduler import worker
+        worker.start_in_background(keepalive_url=f"{S.public_base_url.rstrip('/')}/healthz" if S.keepalive else None)
 
 
 # --------------------------------------------------------------------------- template helpers
@@ -167,7 +178,9 @@ def healthz(db: Session = Depends(get_db)):
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/", db: Session = Depends(get_db)):
     return render(request, "login.html", db, next=next if next.startswith("/") else "/",
-                  configured=auth.auth_configured())
+                  configured=auth.auth_configured(), email_login=bool(S.admin_email),
+                  password_login=bool(S.admin_password_hash),
+                  dev_login_link=request.session.pop("dev_login_link", None))
 
 
 @app.post("/login")
@@ -185,6 +198,62 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
         return back("/login")
     auth.limiter.reset(ip)
     return back(next if next.startswith("/") and not next.startswith("//") else "/")
+
+
+LOGIN_LINK_TTL = timedelta(minutes=20)
+
+
+@app.post("/login/email")
+def login_email(request: Request, email: str = Form(""), csrf: str = Form(""), db: Session = Depends(get_db)):
+    """Passwordless sign-in: email a one-time link to ADMIN_EMAIL. Same reply whatever address is typed."""
+    auth.check_csrf(request, csrf)
+    ip = auth.client_ip(request)
+    if auth.limiter.blocked(ip):
+        flash(request, "Too many attempts. Try again in 15 minutes.", "err")
+        return back("/login")
+    email = email.strip().lower()
+    if S.admin_email and email == S.admin_email:
+        token = secrets.token_urlsafe(32)
+        cfg.put(db, "login_link", {"hash": hashlib.sha256(token.encode()).hexdigest(),
+                                   "expires": (utcnow() + LOGIN_LINK_TTL).isoformat()})
+        link = f"{S.public_base_url.rstrip('/')}/login/verify?token={token}"
+        subject, body = nq.build_simple("Your sign-in link",
+                                        f"Click to sign in to OPvickerG BidRadar (valid for 20 minutes, one use):\n\n{link}\n\n"
+                                        "If you did not ask for this, ignore this email.")
+        nq.enqueue(db, f"login:{hashlib.sha256(token.encode()).hexdigest()[:24]}", "login_link", subject, body, None,
+                   force_recipient=S.admin_email)
+        db.flush()
+        nq.process_pending(db, sender=get_sender(), limit=5)
+        if S.email_provider == "console" and S.environment != "production":
+            request.session["dev_login_link"] = link      # local development only
+    else:
+        auth.limiter.fail(ip)
+    flash(request, "If that address is allowed, a sign-in link is on its way. Check your inbox (and spam).")
+    return back("/login")
+
+
+@app.get("/login/verify")
+def login_verify(request: Request, token: str = "", db: Session = Depends(get_db)):
+    rec = cfg.get(db, "login_link") or {}
+    ok = bool(token and rec.get("hash") and hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest(), rec["hash"]))
+    if ok and rec.get("expires"):
+        from datetime import datetime
+        ok = utcnow() <= ensure_utc(datetime.fromisoformat(rec["expires"]))
+    if not ok:
+        flash(request, "That sign-in link is invalid or has expired. Request a new one.", "err")
+        return back("/login")
+    cfg.put(db, "login_link", {})                         # single use
+    auth.login_as(request, S.admin_email)
+    recipient = cfg.get(db, "recipient")
+    if recipient.get("email") and recipient["email"].lower() == S.admin_email and not recipient.get("verified"):
+        # the click proves control of this inbox, which is exactly what recipient verification checks
+        recipient.update(verified=True, verified_at=utcnow().isoformat(), verification_token_hash=None)
+        cfg.put(db, "recipient", recipient)
+        released = nq.release_held(db)
+        db.add(SystemEvent(level="info", event="recipient_verified", message="Alert recipient verified via sign-in link",
+                           data={"released": released}))
+        flash(request, "Signed in. Your email is confirmed, so tender alerts are now switched on.")
+    return back("/")
 
 
 @app.post("/logout")

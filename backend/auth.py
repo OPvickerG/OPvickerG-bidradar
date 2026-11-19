@@ -84,8 +84,15 @@ def login(request: Request, username: str, password: str) -> bool:
     return bool(ok)
 
 
+def login_as(request: Request, user: str) -> None:
+    request.session.clear()
+    request.session.update({"user": user, "pwv": _pw_version(), "at": int(time.time())})
+    csrf_token(request)
+
+
 def auth_configured() -> bool:
-    return bool(get_settings().admin_password_hash)
+    s = get_settings()
+    return bool(s.admin_password_hash or s.admin_email)
 
 
 if __name__ == "__main__":
