@@ -192,6 +192,8 @@ def score_tender(title: str, description: str = "", document_text: str = "",
                  embedder=None) -> RelevanceResult:
     cats = [c for c in (categories or default_categories()) if c.enabled]
     base = _score_tender(title, description, document_text, procurement_type, cats, embedder)
+    if base.score >= 75:
+        return base                       # already an alert-level match: spelling correction cannot matter
     ct, f1 = correct_spelling(title, cats)
     cd, f2 = correct_spelling(description or "", cats)
     if f1 or f2:
