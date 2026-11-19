@@ -22,15 +22,19 @@ def seed(db: Session) -> None:
             cat = Category(code=c["code"], name=c["name"], description=c.get("description"), enabled=True)
             db.add(cat)
             db.flush()
-        existing = {(k.phrase, k.kind) for k in cat.keywords}
+        existing = {(k.phrase, k.kind): k for k in cat.keywords}
         for group in KINDS:
             for item in c.get(group) or []:
                 phrase = str(item["phrase"] if isinstance(item, dict) else item)
                 weight = float(item.get("weight", 1.0)) if isinstance(item, dict) else 1.0
                 key = (phrase, KIND_NAME[group])
-                if key not in existing:
-                    db.add(Keyword(category_id=cat.id, phrase=phrase, kind=KIND_NAME[group], weight=weight))
-                    existing.add(key)
+                kw = existing.get(key)
+                if kw is None:
+                    kw = Keyword(category_id=cat.id, phrase=phrase, kind=KIND_NAME[group], weight=weight)
+                    db.add(kw)
+                    existing[key] = kw
+                elif not kw.user_defined and kw.weight != weight:
+                    kw.weight = weight          # keep built-in weights in sync with the seed file
         cat.description = c.get("description")
     for a in ADAPTERS:
         src = db.execute(select(Source).where(Source.key == a.key)).scalar_one_or_none()
