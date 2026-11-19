@@ -42,9 +42,26 @@ jobs:
       SCHEDULED_MINUTE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 * * * *' && '30' || '0') || '' }}
       SCAN_TRIGGER: ${{ github.event_name == 'schedule' && 'scheduler' || inputs.trigger }}
     steps:
-      - name: Check configuration
+      - name: Resolve database connection
+        # Either set the DATABASE_URL secret, or install the Neon GitHub integration (it adds the NEON_API_KEY
+        # secret and NEON_PROJECT_ID variable); the pooled connection string is then fetched from Neon's API
+        # at run time and masked in logs. It is never written to the repository.
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_DATABASE: ${{ vars.NEON_DATABASE || 'neondb' }}
+          NEON_ROLE: ${{ vars.NEON_ROLE || 'neondb_owner' }}
         run: |
-          if [ -z "$DATABASE_URL" ]; then echo "::error::Repository secret DATABASE_URL is not set"; exit 1; fi
+          if [ -n "$DATABASE_URL" ]; then echo "Using DATABASE_URL secret"; exit 0; fi
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "::error::No database configured: set the DATABASE_URL secret or install the Neon GitHub integration"; exit 1
+          fi
+          uri=$(curl -sSf -H "Authorization: Bearer $NEON_API_KEY" -H "Accept: application/json" \
+            "https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID/connection_uri?database_name=$NEON_DATABASE&role_name=$NEON_ROLE&pooled=true" \
+            | python3 -c 'import sys, json; print(json.load(sys.stdin)["uri"])')
+          echo "::add-mask::$uri"
+          echo "DATABASE_URL=$uri" >> "$GITHUB_ENV"
+          echo "Database connection resolved from Neon project $NEON_PROJECT_ID"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
