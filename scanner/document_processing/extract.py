@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 MAX_PDF_BYTES = 15 * 1024 * 1024
+MAX_PDF_PAGES = 8          # GeM bid documents put every key fact (value, EMD, eligibility, dates) in the first pages
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE = re.compile(r"(?<![\d/.-])(?:\+?91[-\s]?)?[6-9]\d{9}(?![\d])")
 _DEVANAGARI = re.compile("[ऀ-ॿ]")
@@ -64,7 +65,7 @@ def extract_pdf(data: bytes) -> ExtractionResult:
         from pypdf import PdfReader
         reader = PdfReader(io.BytesIO(data))
         pages = len(reader.pages)
-        raw = "\n".join((p.extract_text() or "") for p in reader.pages)
+        raw = "\n".join((p.extract_text() or "") for p in reader.pages[:MAX_PDF_PAGES])
     except Exception as e:  # corrupt or encrypted PDF
         return ExtractionResult(status="failed", sha256=sha, error=f"pdf parse error: {e}"[:500])
     if len(raw.strip()) < 40:
