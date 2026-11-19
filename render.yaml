@@ -1,0 +1,38 @@
+# Render Blueprint — dashboard only (the scanner runs on GitHub Actions). Free plan: sleeps after 15 min idle.
+services:
+  - type: web
+    name: bidradar-web
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn backend.app:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: APP_ENV
+        value: production
+      - key: SECURE_COOKIES
+        value: "true"
+      - key: EMAIL_PROVIDER
+        value: console
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_DISPATCH_TOKEN
+        sync: false

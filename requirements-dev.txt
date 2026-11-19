@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest==8.4.2
+# Optional extras (off by default):
+#   fastembed  -> EMBEDDING_BACKEND=fastembed (adds ~150 MB model download)
+#   pytesseract pdf2image + tesseract/poppler binaries -> OCR for scanned PDFs
