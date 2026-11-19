@@ -18,6 +18,8 @@
   </div>
 </div>
 
+{% if d.get('summary') %}<section class="card card-sum"><h2>Summary</h2><p class="sum-text">{{ d.summary }}</p></section>{% endif %}
+
 <div class="grid2">
   <div class="col">
     <section class="card">

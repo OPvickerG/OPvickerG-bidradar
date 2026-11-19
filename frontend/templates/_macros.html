@@ -15,6 +15,7 @@
   <td>{{ score(t.relevance_score) }}</td>
   <td class="t-main">
     <a href="/tenders/{{ t.id }}" class="t-title">{{ t.title[:140] }}</a>
+    {% if (t.details or {}).get('summary') %}<div class="t-sum">{{ t.details.summary }}</div>{% endif %}
     <div class="t-meta">{{ cat(t.best_category) }} <span class="mono">{{ t.bid_number or t.external_id }}</span>{% if t.ra_number %} · RA{% endif %}
       · {{ t.organization or t.department or t.ministry or '—' }}{% if t.state %} · {{ t.state }}{% endif %}{% if t.watched %} · <b class="watch">watched</b>{% endif %}</div>
   </td>
