@@ -41,6 +41,8 @@ def setup_logging(level: str = "INFO") -> None:
     handler.setFormatter(JsonFormatter())
     root.handlers = [handler]
     root.setLevel(level)
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def log(logger: logging.Logger, level: int, message: str, **fields) -> None:

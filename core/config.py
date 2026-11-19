@@ -42,6 +42,11 @@ class Settings:
     # token that Cloud Scheduler / internal callers present to /internal/* endpoints
     internal_task_token: Optional[str] = field(default_factory=lambda: os.environ.get("INTERNAL_TASK_TOKEN"))
     secure_cookies: bool = field(default_factory=lambda: _bool("SECURE_COOKIES", True))
+    # address allowed to sign in with an emailed link (no password needed)
+    admin_email: Optional[str] = field(default_factory=lambda: (os.environ.get("ADMIN_EMAIL") or "").strip().lower() or None)
+    # run the 30-minute scanner inside the web process (single free service) and keep the service awake
+    run_scheduler: bool = field(default_factory=lambda: _bool("RUN_SCHEDULER", False))
+    keepalive: bool = field(default_factory=lambda: _bool("KEEPALIVE", False))
 
     # --- scanner -------------------------------------------------------------
     request_delay_seconds: float = field(default_factory=lambda: _float("SCANNER_REQUEST_DELAY", 3.0))
