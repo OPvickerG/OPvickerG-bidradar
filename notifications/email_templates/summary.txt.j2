@@ -1,0 +1,20 @@
+OPvickerG BidRadar — {{ period }} summary ({{ start }} to {{ end }})
+
+New relevant tenders: {{ new|length }}
+Significant updates on relevant tenders: {{ updates|length }}
+Closing within 3 days: {{ closing|length }}
+Scans: {{ scans_ok }} succeeded, {{ scans_failed }} failed, {{ scans_missed }} missed
+
+{% if new %}NEW RELEVANT TENDERS
+{% for t in new %}- [{{ t.score }}] {{ t.title }} ({{ t.number }}) — closes {{ t.deadline }}
+  {{ t.url }}
+{% endfor %}
+{% endif %}{% if closing %}CLOSING SOON
+{% for t in closing %}- [{{ t.score }}] {{ t.title }} ({{ t.number }}) — closes {{ t.deadline }}
+  {{ t.url }}
+{% endfor %}
+{% endif %}{% if updates %}UPDATES
+{% for e in updates %}- {{ e.event }}: {{ e.title }} ({{ e.number }}){% if e.detail %} — {{ e.detail }}{% endif %}
+{% endfor %}
+{% endif %}Dashboard: {{ dashboard }}
+OPvickerG BidRadar · Automated Government Tender Intelligence

@@ -1,0 +1,44 @@
+{{ heading }}
+
+{% if change_summary %}WHAT CHANGED:
+{{ change_summary }}
+
+{% endif %}Tender ID: {{ t.bid_number or t.external_id }}{% if t.ra_number %} (Reverse auction: {{ t.ra_number }}){% endif %}
+Source: {{ source_name }}
+Organization: {{ org }}
+Tender Title: {{ t.title }}
+Location: {{ location }}
+Category: {{ category }}
+Relevance Score: {{ t.relevance_score }}/100 ({{ band }})
+Published Date: {{ published }}
+Submission Deadline: {{ deadline }}
+Estimated Value: {{ est_value }}
+EMD: {{ emd }}
+Contract Duration: {{ duration }}
+Current Status: {{ status }}
+
+WHY THIS TENDER MATCHES:
+{{ t.match_explanation or "—" }}
+
+IMPORTANT REQUIREMENTS:
+{% for r in requirements %}- {{ r }}
+{% else %}- Not extracted (see official document)
+{% endfor %}
+ELIGIBILITY:
+{% for r in eligibility %}- {{ r }}
+{% else %}- Not extracted (see official document)
+{% endfor %}
+POTENTIAL ISSUES:
+{% for r in issues %}- {{ r }}
+{% else %}- None detected
+{% endfor %}
+OFFICIAL LINKS:
+View Tender: {{ links.view or "—" }}
+Download Tender Document: {{ links.document or "—" }}
+View Corrigenda: {{ links.corrigenda or "Not available / none published" }}
+Open in BidRadar: {{ links.dashboard }}
+
+OPvickerG BidRadar
+Automated Government Tender Intelligence
+Last verified: {{ verified }}
+Information comes from public government portals. Always confirm details on the official portal before acting.
