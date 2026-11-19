@@ -4,9 +4,10 @@
 name: BidRadar scan
 
 on:
-  schedule:
-    - cron: "0 * * * *"
-    - cron: "30 * * * *"
+  # The 30-minute schedule now lives in the always-on worker hosted in India (scanner/scheduler/worker.py),
+  # because GeM refuses connections from outside India. This workflow stays available for manual runs on a
+  # self-hosted India runner (docs/PHONE_SCANNER.md). To schedule from GitHub again, restore:
+  #   schedule: [{cron: "0 * * * *"}, {cron: "30 * * * *"}]
   workflow_dispatch:
     inputs:
       trigger:
