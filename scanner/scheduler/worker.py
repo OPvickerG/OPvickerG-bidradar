@@ -68,19 +68,27 @@ def _serve_health(port: int) -> None:
     log(logger, logging.INFO, "health endpoint listening", port=port)
 
 
-def main() -> int:
-    setup_logging()
-    interval = get_settings().scan_interval_minutes
-    STATE["started"] = fmt_ist(utcnow(), True)
-    for sig in (signal.SIGTERM, signal.SIGINT):
+def keepalive_loop(url: str, every_s: float = 600.0) -> None:
+    """Free web services sleep after ~15 idle minutes; a light request to our own health URL keeps the
+    single always-on service (inside the platform's free monthly hours) awake so the scheduler keeps running."""
+    import httpx
+    while not _stop.wait(every_s):
         try:
-            signal.signal(sig, lambda *_: _stop.set())
-        except ValueError:          # not the main thread (tests/embedding): rely on _stop being set directly
-            pass
-    if os.environ.get("PORT", "").isdigit():
-        _serve_health(int(os.environ["PORT"]))
-    log(logger, logging.INFO, "scan worker started", interval_minutes=interval)
+            httpx.get(url, timeout=20)
+        except Exception as e:
+            log(logger, logging.WARNING, "keepalive ping failed", error=str(e)[:200])
 
+
+def start_in_background(keepalive_url: Optional[str] = None) -> None:
+    STATE["started"] = fmt_ist(utcnow(), True)
+    threading.Thread(target=run_forever, daemon=True, name="scan-scheduler").start()
+    if keepalive_url:
+        threading.Thread(target=keepalive_loop, args=(keepalive_url,), daemon=True, name="keepalive").start()
+    log(logger, logging.INFO, "in-app scan scheduler started", keepalive=bool(keepalive_url))
+
+
+def run_forever() -> None:
+    interval = get_settings().scan_interval_minutes
     run_slot()                                   # catch up the current slot if it has not run yet
     while not _stop.is_set():
         target = next_slot(utcnow(), interval)
@@ -95,6 +103,20 @@ def main() -> int:
         log(logger, logging.INFO, "slot finished", slot_ist=fmt_ist(target),
             status=(res or {}).get("status", "crashed"))
     log(logger, logging.INFO, "scan worker stopping")
+
+
+def main() -> int:
+    setup_logging()
+    STATE["started"] = fmt_ist(utcnow(), True)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, lambda *_: _stop.set())
+        except ValueError:          # not the main thread (tests/embedding): rely on _stop being set directly
+            pass
+    if os.environ.get("PORT", "").isdigit():
+        _serve_health(int(os.environ["PORT"]))
+    log(logger, logging.INFO, "scan worker started", interval_minutes=get_settings().scan_interval_minutes)
+    run_forever()
     return 0
 
 
