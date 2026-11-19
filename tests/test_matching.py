@@ -136,3 +136,18 @@ def test_spares_lists_and_cross_item_pairs_do_not_alert(title, desc):
 ])
 def test_real_repair_jobs_filed_as_product_bids_still_alert(title, desc):
     assert score_tender(title, desc, procurement_type="product").score >= 75
+
+
+@pytest.mark.parametrize("title,desc,ptype", [
+    ("170 items of Leyland Bought Out Spares",
+     "SC391010026 14inch CLUTCH FACING 4 FINGER,SC391010051 14inchCLUTCH DISC ASSY WITH VALEO F 510 FACING AMREP MAKE",
+     "product"),
+    ("Custom Bid for Services - Contractual Work of Withdrawal of 02nos Grounded UDM Machines from UG to surface", "",
+     "service"),
+])
+def test_parts_catalogue_lines_and_machines_are_not_jobs(title, desc, ptype):
+    assert score_tender(title, desc, procurement_type=ptype).score < 50
+
+
+def test_part_numbers_do_not_hide_real_repair_jobs():
+    assert score_tender("Repair of SC12345678 fuel injection pump assy", procurement_type="service").score >= 75

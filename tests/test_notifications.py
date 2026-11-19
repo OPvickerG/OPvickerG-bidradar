@@ -168,3 +168,26 @@ def test_delivery_status_only_from_signed_provider_event(db):
     assert not verify_resend_webhook(body, good, None)
     assert nq.apply_provider_event(db, {"type": "email.delivered", "data": {"email_id": n.provider_message_id}})
     assert n.status == "delivered" and n.delivered_at is not None
+
+
+def test_rule_change_rescores_and_cancels_alerts_that_no_longer_qualify(db, monkeypatch):
+    from scanner.discovery import pipeline
+    good = _tender(db, external_id="R1", title="Repair and overhauling of DG set")
+    bad = _tender(db, external_id="R2", title="Electric Lift")      # stored with a stale high score
+    bad.description = "stainless steel face plate 1.5mm"
+    n_good, n_bad = nq.notify_new_tender(db, good), nq.notify_new_tender(db, bad)
+    assert n_good.status == n_bad.status == "held_no_recipient"
+    monkeypatch.setattr(pipeline, "scoring_fingerprint", lambda: "rules-v2")
+    assert pipeline.rescore_if_rules_changed(db) >= 2
+    assert bad.relevance_score < 50 and good.relevance_score >= 75
+    assert n_bad.status == "cancelled" and n_good.status == "held_no_recipient"
+    assert pipeline.rescore_if_rules_changed(db) == 0                # same rules: no second pass
+
+
+def test_release_skips_closed_tenders(db):
+    t = _tender(db)
+    n = nq.notify_new_tender(db, t)
+    t.deadline_at = utcnow() - timedelta(hours=1)
+    _verify_recipient(db)
+    nq.release_held(db)
+    assert n.status == "cancelled" and "closed" in n.last_error
