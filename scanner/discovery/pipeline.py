@@ -624,3 +624,43 @@ def rescore_all(db: Session, only_active: bool = False) -> int:
         Scan.score(dummy, t)
         n += 1
     return n
+
+
+_RULE_FILES = ("database/seed/categories.yaml", "scanner/bid_analysis/relevance.py", "scanner/keyword_engine/text.py",
+               "scanner/keyword_engine/matcher.py", "scanner/keyword_engine/model.py",
+               "scanner/semantic_matching/concepts.py")
+
+
+def scoring_fingerprint() -> str:
+    """Hash of the code and seed that decide relevance scores; changes whenever the matching rules change."""
+    import hashlib
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    h = hashlib.sha256()
+    for rel in _RULE_FILES:
+        with open(os.path.join(root, rel), "rb") as fh:
+            h.update(fh.read())
+    return h.hexdigest()[:16]
+
+
+def rescore_if_rules_changed(db: Session) -> int:
+    """After a deploy that changes matching rules, re-score active tenders once and cancel queued 'new tender'
+    alerts for tenders that no longer qualify (so improved rules also clean up alerts not yet sent)."""
+    fp = scoring_fingerprint()
+    cur = cfg.get(db, "scoring") or {}
+    if cur.get("fingerprint") == fp:
+        return 0
+    n = rescore_all(db, only_active=True)
+    db.flush()
+    cancelled = 0
+    held = ["pending", "held_no_recipient", "held_unverified", "held_disabled"]
+    for note in db.execute(select(EmailNotification).where(EmailNotification.event_type == "new_tender",
+                                                           EmailNotification.status.in_(held))).scalars():
+        t = db.get(Tender, note.tender_id) if note.tender_id else None
+        if t is not None and not nq.tender_qualifies(db, t):
+            note.status, note.last_error = "cancelled", "tender no longer matches after scoring rules were updated"
+            cancelled += 1
+    cfg.put(db, "scoring", {"fingerprint": fp, "rescored": n, "alerts_cancelled": cancelled,
+                            "at": utcnow().isoformat()})
+    log(logger, logging.INFO, "scoring rules changed: re-scored stored tenders", rescored=n, alerts_cancelled=cancelled)
+    return n
