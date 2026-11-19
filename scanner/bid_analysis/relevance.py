@@ -20,7 +20,7 @@ SERVICE_STEMS = {"repair", "overhaul", "recondition", "servic", "maintenanc", "c
 _SUPPLY_RX = re.compile(r"\b(supply of|procurement of|purchase of|providing of new|new)\b")
 _EQUIPMENT_RX = re.compile(
     r"\b(grinding|boring|honing|testing|test|calibration|diagnostic|diagnostics|scanning|facing|lapping|injector)\s+"
-    r"(machine|machines|equipment|bench|benches|stand|tool|tools|kit|kits|scanner|tester|rig|machinery)\b")
+    r"(machineunit|machine|machines|equipment|bench|benches|stand|tool|tools|kit|kits|scanner|tester|rig|machinery)\b")
 _JOB_WORK_RX = re.compile(r"\b(job work|repair|overhaul|servicing|maintenance|amc|cmc|reconditioning)\b")
 
 
