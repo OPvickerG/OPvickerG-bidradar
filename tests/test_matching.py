@@ -115,3 +115,24 @@ def test_phrases_do_not_span_title_and_description():
     assert r.best_category == "B"
     f = next(c for c in r.categories if c.code == "F")
     assert "vehicle repair" not in f.matched_phrases
+
+
+# --- regressions found on the first live GeM scan (19 Nov 2026) -------------------------------------------
+@pytest.mark.parametrize("title,desc", [
+    ("B VEH SPARES", "ARMATURE ASSY,KIT STARTER MOTOR,PUMP FUEL INJECTION ROTARY,INJECTOR,REPAIR KIT MAJOR SLAVE CYLINDER"),
+    ("Rectifier Assy,Field Regulator,Air Hose Rubber,Major Repair Kit,Liner Assy,Rocker Head Assy", ""),
+    ("Procurement of Tools and Equipments for ITI", "PORTABLE WELDING MACHINE,Argon Cylinder 25 Liter,Metal cutoff Machine"),
+    ("Electric Lift", "Supply fire in repair push button box complete with stainless steel face plate 1.5mm thick"),
+    ("Automobile Items", "Cut section of 4 or 6 cylinder diesel engine with moving condition,Spanner set"),
+])
+def test_spares_lists_and_cross_item_pairs_do_not_alert(title, desc):
+    r = score_tender(title, desc, procurement_type="product")
+    assert r.score < 50, (r.score, r.explanation)
+
+
+@pytest.mark.parametrize("title,desc", [
+    ("REWINDING OF STATOR 15 KVA", "REWINDING OF STATOR 15 KVA,HEAD GRINDING,REPAIR OF FUEL PUMP 15 KVA,STARTER MOTOR REPAIR"),
+    ("Repair to clutch system including by replace of 01 Set Clutch Plate", "Repair to engine heating system by replace of 01 No Water pump"),
+])
+def test_real_repair_jobs_filed_as_product_bids_still_alert(title, desc):
+    assert score_tender(title, desc, procurement_type="product").score >= 75
