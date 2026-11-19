@@ -1,0 +1,293 @@
+# OPvickerG BidRadar — business category knowledge base.
+# phrases:   the user's own service names + close variants (strongest signal)
+# synonyms:  alternative wording procurement documents actually use
+# discovery: short search terms sent to portal search boxes (kept few: each costs a request)
+# objects / actions: the concept model. A tender matches semantically when an OBJECT the business works on
+#            co-occurs (nearby) with an ACTION the business performs.
+# negatives: contexts that mean "not this business" (e.g. document scanners, medical diagnostics)
+# supply_only_penalty: true where buying NEW equipment (not repair/service) is out of scope
+
+categories:
+  - code: A
+    name: CRDI and Diesel Injection Systems
+    description: Repair, testing, calibration and overhaul of CRDI / diesel fuel injection pumps and injectors (Bosch/MICO, Lucas, Denso, Siemens/Delphi systems).
+    supply_only_penalty: true
+    phrases:
+      - all crdi diesel pumps system repair
+      - common rail diesel injection system repair
+      - crdi pump maintenance
+      - crdi pump repair
+      - crdi system repair
+      - diesel fuel injection pump repair
+      - fuel injection pump repair
+      - diesel injection system overhauling
+      - diesel injector repair
+      - fuel injector repair
+      - fuel injection pump testing
+      - diesel pump calibration
+      - fuel injection pump calibration
+      - diesel fuel system maintenance
+      - injector calibration
+      - nozzle testing
+    synonyms:
+      - common rail
+      - crdi
+      - cr injector
+      - common rail injector
+      - fuel injection pump
+      - fip
+      - inline pump
+      - rotary pump
+      - distributor pump
+      - injection pump
+      - fuel injector
+      - diesel injector
+      - injector nozzle
+      - high pressure pump
+      - mico bosch
+      - bosch diesel
+      - lucas tvs
+      - lucas diesel
+      - denso diesel
+      - siemens diesel
+      - delphi diesel
+    discovery:
+      - crdi
+      - common rail
+      - fuel injection
+      - injection pump
+      - injector
+      - fuel pump repair
+    objects: [fuel injection pump, injection pump, fuel pump, diesel pump, crdi pump, injector, nozzle, common rail, fuel injection system, high pressure pump, fip]
+    actions: [repair, overhaul, overhauling, recondition, reconditioning, calibration, calibrate, testing, test, servicing, service, maintenance, rectification]
+    negatives: [petrol pump, fuel dispensing, fuel dispenser, water pump, submersible, hand pump, fire pump, centrifugal pump, medical, insulin, syringe pump, infusion pump, injector for medical, contrast injector, power injector]
+
+  - code: B
+    name: Cylinder Head Work
+    description: Cylinder head facing/resurfacing, valve seat refacing and cutting, head grinding and reconditioning.
+    supply_only_penalty: true
+    phrases:
+      - head facing
+      - cylinder head facing
+      - cylinder head resurfacing
+      - head seat refacing
+      - valve seat refacing
+      - valve seat cutting
+      - cylinder head grinding
+      - cylinder head reconditioning
+      - engine head machining
+      - cylinder head repair
+      - cylinder head overhaul
+    synonyms:
+      - head surfacing
+      - head skimming
+      - valve grinding
+      - valve lapping
+      - valve seat grinding
+      - valve guide replacement
+      - head gasket face
+      - decarbonising
+      - decarbonizing
+      - top overhaul
+    discovery:
+      - cylinder head
+      - valve seat
+      - head facing
+    objects: [cylinder head, engine head, valve seat, {phrase: valve, weight: 0.55}, head gasket face]
+    actions: [facing, refacing, resurfacing, surfacing, grinding, machining, reconditioning, recondition, cutting, lapping, repair, overhaul, skimming]
+    negatives: [tap, water valve, gate valve, ball valve, butterfly valve, pipeline valve, valve supply, shower head, sprinkler head, print head, printhead]
+
+  - code: C
+    name: Engine Machining
+    description: Engine/cylinder boring and reboring, crankshaft grinding and reconditioning, engine machining and overhauling.
+    supply_only_penalty: true
+    phrases:
+      - engine boring
+      - cylinder boring
+      - engine block reboring
+      - engine reboring
+      - engine reconditioning
+      - crank grinding
+      - crankshaft grinding
+      - crankshaft reconditioning
+      - engine machining services
+      - engine overhauling
+      - engine overhaul
+      - complete engine overhaul
+    synonyms:
+      - reboring
+      - re-boring
+      - cylinder liner
+      - liner boring
+      - honing
+      - crank shaft
+      - crankshaft polishing
+      - line boring
+      - block machining
+      - major overhaul of engine
+      - engine assembly overhaul
+      - short engine
+      - long engine
+    discovery:
+      - boring
+      - crankshaft
+      - engine overhaul
+      - overhauling of engine
+      - reconditioning
+    objects: [engine, {phrase: cylinder, weight: 0.7}, cylinder block, engine block, crankshaft, crank, liner, piston, connecting rod]
+    actions: [boring, reboring, grinding, honing, machining, reconditioning, recondition, overhaul, overhauling, rebuild, repair]
+    negatives: [bore well, borewell, tube well, tubewell, boring of well, drilling of bore, horizontal directional, soil boring, geotechnical, core boring, piling, hand pump]
+
+  - code: D
+    name: Automotive Scanning and Diagnostics
+    description: Vehicle computer / OBD / ECU scanning and diagnostics for cars and commercial vehicles.
+    supply_only_penalty: false
+    phrases:
+      - all type of car scanning
+      - car scanning and diagnosis
+      - vehicle computer diagnostics
+      - automotive diagnostic services
+      - obd scanning
+      - obd-ii diagnostics
+      - obd ii diagnostics
+      - ecu diagnostics
+      - electronic vehicle diagnostics
+      - engine fault diagnosis
+      - vehicle health scanning
+      - car diagnostic services
+      - automobile electrical diagnostics
+      - commercial vehicle diagnostics
+      - vehicle diagnostic scanner
+    synonyms:
+      - obd
+      - obd2
+      - obdii
+      - ecu
+      - ecm
+      - engine control unit
+      - fault code
+      - dtc
+      - diagnostic scanner for vehicle
+      - automotive scanner
+      - vehicle scanner
+      - car scanner
+      - computerised wheel alignment
+      - vehicle diagnostic
+      - auto electrical
+      - wiring harness repair
+    discovery:
+      - vehicle diagnostic
+      - obd
+      - ecu
+      - car scanning
+    objects: [vehicle, car, automobile, truck, bus, jeep, gypsy, commercial vehicle, engine, ecu, ecm, obd]
+    actions: [diagnostic, diagnostics, diagnosis, scanning, scan, fault finding, troubleshooting, electrical repair]
+    negatives: [document scanner, barcode, bar code, flatbed, ocr, x-ray, xray, baggage, ct scan, mri, ultrasound, ultrasonography, medical, laboratory, lab test, diagnostic kit, reagent, pathology, elisa, rapid test, blood, hospital, patient, network scan, vulnerability scan, security scan, cyber, malware, antivirus, body scanner, under vehicle scanning system, uvss]
+
+  - code: E
+    name: Plates Facing and Grinding
+    description: Facing, resurfacing and grinding of metal plates (incl. clutch/pressure/flywheel plates) and surface grinding services.
+    supply_only_penalty: true
+    phrases:
+      - all types of plates facing and grinding
+      - plates facing and grinding
+      - plate facing
+      - plate resurfacing
+      - surface grinding
+      - metal plate grinding
+      - industrial plate machining
+      - plate refacing
+      - machining and grinding services
+      - flywheel grinding
+      - flywheel resurfacing
+      - pressure plate facing
+      - clutch plate facing
+      - brake drum grinding
+      - brake disc resurfacing
+    synonyms:
+      - surface grinder job
+      - lapping of plates
+      - plate machining
+      - resurfacing
+      - refacing
+      - flywheel facing
+      - brake drum turning
+      - disc skimming
+      - job work machining
+    discovery:
+      - surface grinding
+      - plate facing
+      - flywheel
+      - grinding work
+    objects: [plate, plates, flywheel, pressure plate, clutch plate, brake drum, brake disc, disc, surface, die, mould]
+    actions: [facing, refacing, resurfacing, grinding, machining, lapping, skimming, turning]
+    negatives: [spice, spices, masala, flour, grain, wet grinder, mixer grinder, kitchen, pulveriser, pulverizer, angle grinder supply, grinding machine supply, grinding wheel supply, number plate, license plate, registration plate, hot plate, name plate, food plate, dinner plate, steel plate supply, plate heat exchanger, solar plate, photo plate, x-ray plate]
+
+  - code: F
+    name: Car and Generator Repair
+    description: Repair, servicing and overhaul of cars, automobiles, commercial vehicles and diesel generator (DG) sets.
+    supply_only_penalty: true
+    phrases:
+      - all types of car repair
+      - automobile repair services
+      - motor vehicle repair
+      - vehicle maintenance
+      - car servicing
+      - automobile overhauling
+      - commercial vehicle repair
+      - diesel vehicle repair
+      - generator repair
+      - diesel generator repair
+      - dg set repair
+      - generator maintenance
+      - generator servicing
+      - genset overhauling
+      - engine repair and maintenance
+      - generator engine reconditioning
+      - repair and overhauling service cars
+      - repair and overhauling service vehicles
+      - repair and overhauling service trucks
+      - repair and overhauling service bus
+      - repair and overhauling service generator
+      - repair and overhauling service dg set
+      - repair and overhauling service diesel engine
+      - repair and maintenance of vehicles
+      - repair of vehicles
+      - repair of dg set
+      - amc of dg set
+      - annual maintenance of dg set
+      - comprehensive maintenance of dg
+      - vehicle repair
+    synonyms:
+      - dg set
+      - d g set
+      - genset
+      - diesel generator
+      - diesel generating set
+      - generating set
+      - alternator repair
+      - auto repair
+      - workshop services
+      - motor vehicle
+      - light motor vehicle
+      - heavy motor vehicle
+      - jeep
+      - gypsy
+      - bolero
+      - scorpio
+      - innova
+      - ambulance repair
+      - truck repair
+      - bus repair
+    discovery:
+      - vehicle repair
+      - repair of vehicle
+      - car repair
+      - repair and overhauling
+      - dg set
+      - genset
+      - diesel generator
+      - generator repair
+    objects: [vehicle, vehicles, car, cars, automobile, motor vehicle, truck, bus, jeep, gypsy, ambulance, tractor, dg set, generator, genset, diesel generator, generating set, alternator, engine]
+    actions: [repair, repairs, overhaul, overhauling, servicing, service, maintenance, amc, cmc, reconditioning, recondition, rectification, breakdown]
+    negatives: [hiring of vehicle, vehicle hiring, cab hiring, taxi hiring, bus hiring, hiring of car, rental, on hire, purchase of vehicle, vehicle insurance, parking, washing only, transportation service, goods transport, fuel supply, petrol, tyre supply, battery supply, generator hiring, dg set hiring, rent of dg]
