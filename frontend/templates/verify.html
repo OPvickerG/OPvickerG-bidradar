@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Email verification{% endblock %}
+{% block heading %}Email verification{% endblock %}
+{% block bare %}
+<div class="login"><div class="login-card">
+  <div class="login-brand"><img src="/static/radar.svg" alt="" width="44" height="44"><div><b>OPvickerG</b> BidRadar</div></div>
+  {% if ok %}
+    <div class="flash flash-ok">Address verified. Tender alerts will now be delivered to it.</div>
+  {% else %}
+    <div class="flash flash-err">This verification link is invalid or has expired. Request a new one from Settings.</div>
+  {% endif %}
+  <a class="btn" href="/settings#recipient">Go to dashboard</a>
+</div></div>
+{% endblock %}
+{% block content %}
+  {% if ok %}<div class="flash flash-ok">Address verified. Tender alerts will now be delivered to it.</div>
+  {% else %}<div class="flash flash-err">This verification link is invalid or has expired. Request a new one below.</div>{% endif %}
+  <a class="btn" href="/settings#recipient">Back to settings</a>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% from "_macros.html" import score, status, cat %}
+{% block title %}{{ t.bid_number or t.external_id }}{% endblock %}
+{% block heading %}{{ t.title[:160] }}{% endblock %}
+{% block subheading %}<span class="mono">{{ t.bid_number or t.external_id }}</span>{% if t.ra_number %} · RA <span class="mono">{{ t.ra_number }}</span>{% endif %} · {{ src.name if src else t.source_key }}{% endblock %}
+{% block content %}
+<div class="detail-head card">
+  <div class="dh-score">{{ score(t.relevance_score) }}<div><b>{{ t.relevance_score|band|capitalize }} relevance</b>
+    <span class="muted">{{ cat(t.best_category) }} {{ CATEGORY_NAMES.get(t.best_category, 'No category') }}</span></div></div>
+  <div class="dh-actions">
+    {{ status(t.status) }}{% if t.stage %} <span class="muted">{{ t.stage }}</span>{% endif %}
+    <form method="post" action="/tenders/{{ t.id }}/watch" class="inline">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn {{ 'btn-on' if t.watched }}">{{ '★ Watching' if t.watched else '☆ Watch' }}</button>
+    </form>
+    {% if links.view %}<a class="btn btn-primary" href="{{ links.view }}" rel="noopener noreferrer" target="_blank">Official page ↗</a>{% endif %}
+    {% if links.document %}<a class="btn" href="{{ links.document }}" rel="noopener noreferrer" target="_blank">Tender document ↗</a>{% endif %}
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="col">
+    <section class="card">
+      <h2>Key facts</h2>
+      <dl class="facts">
+        <dt>Organisation</dt><dd>{{ t.organization or '—' }}</dd>
+        <dt>Department</dt><dd>{{ t.department or '—' }}</dd>
+        <dt>Ministry / State body</dt><dd>{{ t.ministry or '—' }}</dd>
+        <dt>Location</dt><dd>{{ t.location or t.state or 'Not extracted' }}</dd>
+        <dt>Procurement type</dt><dd>{{ t.procurement_type or '—' }}</dd>
+        <dt>Published</dt><dd>{{ t.published_at|ist }}</dd>
+        <dt>Submission deadline</dt><dd><b>{{ t.deadline_at|ist }}</b> <span class="muted">({{ t.deadline_at|until }})</span></dd>
+        <dt>Bid opening</dt><dd>{{ t.opening_at|ist }}</dd>
+        <dt>Quantity</dt><dd>{{ ('%g'|format(t.quantity)) if t.quantity is not none else '—' }}</dd>
+        <dt>Estimated value</dt><dd>{{ t.estimated_value|money if t.estimated_value else 'Not disclosed' }}</dd>
+        <dt>EMD</dt><dd>{{ t.emd|money if t.emd else ('Not required' if d.get('doc_fields', {}).get('emd_required') == 'No' else 'Unknown') }}</dd>
+        <dt>Performance security</dt><dd>{{ t.performance_security or '—' }}</dd>
+        <dt>Contract duration</dt><dd>{{ t.contract_duration or 'Not stated' }}</dd>
+        <dt>Corrigenda</dt><dd>{{ d.get('corrigenda_count', 0) }}</dd>
+        <dt>First seen</dt><dd>{{ t.first_seen_at|ist }}</dd>
+        <dt>Last verified on portal</dt><dd>{{ t.last_verified_at|ist }}</dd>
+      </dl>
+      {% if d.get('missing') %}<p class="note">Missing from the source: {{ d.missing|join('; ') }}.</p>{% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Why it matched</h2>
+      <p>{{ t.match_explanation or '—' }}</p>
+      <table class="tbl tbl-compact"><thead><tr><th>Category</th><th>Score</th><th>Signals</th></tr></thead><tbody>
+      {% for m in matches %}
+        <tr><td>{{ cat(m.category_code) }} {{ CATEGORY_NAMES.get(m.category_code) }}</td><td>{{ score(m.score) }}</td>
+          <td class="small">{{ m.matched_phrases|join(', ') or '—' }}
+            <div class="muted">{% for k, v in m.breakdown.items() %}{{ k }} {{ '%+g'|format(v) }}{{ ', ' if not loop.last }}{% endfor %}</div></td></tr>
+      {% else %}<tr><td colspan="3" class="empty">No category signals.</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+
+    {% if d.get('outcome') %}
+    <section class="card">
+      <h2>Outcome (public result page)</h2>
+      {% set o = d.outcome %}
+      <dl class="facts">
+        <dt>Stage</dt><dd>{{ o.stage or '—' }}</dd>
+        <dt>Bidders</dt><dd>{{ o.bidders if o.bidders is not none else '—' }}</dd>
+        <dt>Technically qualified</dt><dd>{{ o.qualified if o.qualified is not none else '—' }}</dd>
+        <dt>Disqualified</dt><dd>{{ o.disqualified if o.disqualified is not none else '—' }} <span class="muted">(reasons are not published)</span></dd>
+        <dt>Price ranking</dt><dd>{% for r, p in o.ranks %}{{ r }} {{ p|money }}{{ ' · ' if not loop.last }}{% else %}not yet published{% endfor %}</dd>
+        {% if o.l1_name %}<dt>L1 (awarded)</dt><dd>{{ o.l1_name }}</dd>{% endif %}
+      </dl>
+      <p class="note">Losing bidders are deliberately not stored by name.</p>
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <h2>Eligibility</h2>
+      {% for x in d.get('eligibility', []) %}<div class="li">{{ x }}</div>{% else %}<p class="empty">Not extracted{% if d.get('doc_status') %} (document: {{ d.doc_status|replace('_',' ') }}){% endif %}.</p>{% endfor %}
+    </section>
+    <section class="card">
+      <h2>Important requirements</h2>
+      {% for x in d.get('requirements', []) %}<div class="li">{{ x }}</div>{% else %}<p class="empty">Not extracted.</p>{% endfor %}
+    </section>
+    <section class="card card-warn">
+      <h2>Potential issues</h2>
+      {% for x in d.get('issues', []) %}<div class="li">⚠ {{ x }}</div>{% else %}<p class="empty">None identified.</p>{% endfor %}
+    </section>
+    <section class="card">
+      <h2>Documents</h2>
+      {% for doc in t.documents %}
+        <div class="li"><span>{{ doc.kind|replace('_',' ') }} · <a href="{{ doc.url }}" rel="noopener noreferrer" target="_blank">open ↗</a></span>
+          <span class="li-r">{{ status(doc.status) }}{% if doc.pages %} {{ doc.pages }} p{% endif %}</span></div>
+        {% if doc.error %}<div class="small muted">{{ doc.error }}</div>{% endif %}
+      {% else %}<p class="empty">No document analysed yet (documents are fetched for tenders scoring 40+).</p>{% endfor %}
+      {% if d.get('corrigenda') %}<h3>Corrigenda</h3>
+        {% for c in d.corrigenda %}<div class="li small">{{ c.modified_on }} — {{ c.change }}</div>{% endfor %}{% endif %}
+    </section>
+  </div>
+</div>
+
+<section class="card">
+  <h2>Change history</h2>
+  {% for e in events %}
+    <div class="ev"><span class="ev-t">{{ e.observed_at|ist }}</span><span class="pill {{ 'pill-ev' if e.significant else 'pill-quiet' }}">{{ e.event_type|replace('_',' ') }}</span>
+      {% if e.old_value or e.new_value %}<span>{% if e.old_value %}<s class="muted">{{ e.old_value[:140] }}</s> → {% endif %}{{ (e.new_value or '')[:200] }}</span>{% endif %}</div>
+  {% else %}<p class="empty">No changes recorded.</p>{% endfor %}
+</section>
+
+<section class="card" id="alerts">
+  <h2>Alerts for this tender</h2>
+  {% for n in notes %}
+    <div class="li"><a href="/monitoring/notifications/{{ n.id }}">{{ n.event_type|replace('_',' ') }}</a><span class="li-r">{{ status(n.status) }} {{ n.created_at|ist }}</span></div>
+  {% else %}<p class="empty">No alerts generated{% if t.relevance_score < threshold and not t.watched %} (score below the alert threshold of {{ threshold }}){% endif %}.</p>{% endfor %}
+</section>
+{% endblock %}

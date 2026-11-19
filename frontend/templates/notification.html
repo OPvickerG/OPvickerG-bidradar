@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status %}
+{% block title %}Notification {{ n.id }}{% endblock %}
+{% block heading %}{{ n.subject }}{% endblock %}
+{% block subheading %}{{ n.event_type|replace('_',' ') }} · {{ status(n.status) }} · created {{ n.created_at|ist }}{% endblock %}
+{% block content %}
+<div class="grid2">
+  <section class="card">
+    <h2>Message (plain-text version)</h2>
+    <pre class="mail">{{ n.body_text }}</pre>
+  </section>
+  <section class="card">
+    <h2>Delivery</h2>
+    <dl class="facts">
+      <dt>Recipient</dt><dd>{{ n.recipient or '— (held: no recipient configured)' }}</dd>
+      <dt>Provider</dt><dd>{{ n.provider or '—' }}</dd>
+      <dt>Provider message id</dt><dd class="mono small">{{ n.provider_message_id or '—' }}</dd>
+      <dt>Attempts</dt><dd>{{ n.attempts }}</dd>
+      <dt>Next attempt</dt><dd>{{ n.next_attempt_at|ist }}</dd>
+      <dt>Delivered</dt><dd>{{ n.delivered_at|ist }}</dd>
+      <dt>Dedupe key</dt><dd class="mono small">{{ n.dedupe_key }}</dd>
+    </dl>
+    <h3>Attempt log</h3>
+    {% for a in attempts %}
+      <div class="ev"><span class="ev-t">{{ a.attempted_at|ist }}</span><span class="pill pill-{{ a.outcome }}">{{ a.outcome|replace('_',' ') }}</span>
+        <span class="small">{{ a.provider }}{% if a.http_status %} HTTP {{ a.http_status }}{% endif %} {{ a.detail or '' }}</span></div>
+    {% else %}<p class="empty">Not attempted yet.</p>{% endfor %}
+    {% if n.tender_id %}<p><a class="btn" href="/tenders/{{ n.tender_id }}">Open tender</a></p>{% endif %}
+  </section>
+</div>
+{% endblock %}

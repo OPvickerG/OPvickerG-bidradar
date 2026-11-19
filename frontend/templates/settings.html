@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status, cat %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block subheading %}Alert recipient, matching, geography, sources, notifications and monitoring control{% endblock %}
+{% block content %}
+<nav class="toc">
+  <a href="#recipient">Recipient</a><a href="#monitoring">Monitoring</a><a href="#matching">Matching</a>
+  <a href="#keywords">Keywords</a><a href="#geography">Geography</a><a href="#sources">Sources</a><a href="#notifications">Notifications</a>
+</nav>
+
+<section class="card" id="recipient">
+  <h2>Alert recipient</h2>
+  {% set r = s.recipient %}
+  {% if not r.email %}
+    <p><span class="dot dot-mute"></span> <b>No recipient configured.</b> Scans still run and alerts are stored, but they are held and nothing is emailed.</p>
+  {% elif not r.verified %}
+    <p><span class="dot dot-warn"></span> <b>{{ r.email }}</b> — awaiting verification (sent {{ r.verification_sent_at[:16]|replace('T',' ') if r.verification_sent_at else '—' }} UTC). Alerts are held until the link is clicked.</p>
+  {% else %}
+    <p><span class="dot dot-ok"></span> <b>{{ r.email }}</b> — verified. Alerts are being sent.</p>
+  {% endif %}
+  {% if dev_link %}
+    <div class="flash flash-warn">Dry-run verification link (shown only because the email provider is <code>console</code>):<br>
+      <a href="{{ dev_link }}" class="mono small">{{ dev_link }}</a></div>
+  {% endif %}
+  <form method="post" action="/settings/recipient" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="f-wide">Recipient email<input type="email" name="email" required maxlength="254" placeholder="alerts@yourcompany.example"></label>
+    <button class="btn btn-primary">{{ 'Change & re-verify' if r.email else 'Save & send verification' }}</button>
+  </form>
+  <div class="row">
+    {% if r.email and not r.verified %}
+    <form method="post" action="/settings/recipient/resend" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn">Resend verification</button></form>
+    {% endif %}
+    {% if r.email and r.verified %}
+    <form method="post" action="/settings/test-email" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn">Send test notification</button></form>
+    {% endif %}
+    {% if r.email %}
+    <form method="post" action="/settings/recipient/clear" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-danger">Remove recipient</button></form>
+    {% endif %}
+  </div>
+  <p class="note">Email provider credentials are never entered here. They live in the cloud secret manager (see CONFIGURATION.md).</p>
+</section>
+
+<section class="card {{ 'card-warn' if s.monitoring.paused }}" id="monitoring">
+  <h2>Monitoring</h2>
+  {% if s.monitoring.paused %}
+    <p><b>Paused</b> since {{ (s.monitoring.paused_at or '')[:16]|replace('T',' ') }} UTC{% if s.monitoring.paused_reason %} — {{ s.monitoring.paused_reason }}{% endif %}.
+      Scheduled slots are recorded as <i>skipped (paused)</i>. Manual “Scan now” still works.</p>
+    <form method="post" action="/settings/monitoring"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn btn-primary" name="action" value="resume">Resume monitoring</button></form>
+  {% else %}
+    <p><b>Active.</b> The cloud scheduler runs a scan at every :00 and :30 (IST).</p>
+    <form method="post" action="/settings/monitoring" class="row"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="f-wide">Reason (optional)<input name="reason" maxlength="200" placeholder="e.g. holiday period"></label>
+      <button class="btn btn-danger" name="action" value="pause">Pause monitoring</button></form>
+  {% endif %}
+</section>
+
+<section class="card" id="matching">
+  <h2>Matching</h2>
+  <form method="post" action="/settings/matching">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Alert threshold (0–100)
+      <input type="number" name="threshold" min="0" max="100" value="{{ s.matching.threshold }}"></label>
+    <p class="small muted">Bands: 90–100 very strong · 75–89 strong · 50–74 potentially relevant · 25–49 weak · 0–24 irrelevant. Only tenders at or above the threshold (and in an enabled category) generate alerts; all are kept in the Explorer.</p>
+    <div class="checks">
+      {% for c in cats %}
+      <label class="chk"><input type="checkbox" name="cat_{{ c.code }}" value="1" {{ 'checked' if c.code in s.matching.enabled_categories }}> {{ cat(c.code) }} {{ c.name }}</label>
+      {% endfor %}
+    </div>
+    <button class="btn btn-primary">Save matching settings</button>
+  </form>
+</section>
+
+<section class="card" id="keywords">
+  <h2>Keywords</h2>
+  <form method="post" action="/settings/keywords/add" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Category<select name="category">{% for c in cats %}<option value="{{ c.code }}">{{ c.code }} · {{ c.name }}</option>{% endfor %}</select></label>
+    <label>Type<select name="kind">{% for k, l in kind_labels.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+    <label class="f-wide">Keyword / phrase<input name="phrase" required maxlength="120" placeholder="e.g. fuel injector calibration"></label>
+    <button class="btn btn-primary">Add</button>
+  </form>
+  <p class="small muted">Portal search terms decide what is fetched from the portals; the other types decide how listings are scored. Changes re-score stored tenders immediately.</p>
+  {% for c in cats %}
+  <details class="kw" id="cat-{{ c.code }}">
+    <summary>{{ cat(c.code) }} <b>{{ c.name }}</b> <span class="muted">{{ c.keywords|selectattr('enabled')|list|length }} active keywords</span></summary>
+    {% for kind, label in kind_labels.items() %}
+      {% set ks = c.keywords|selectattr('kind', 'equalto', kind)|list %}
+      {% if ks %}<h4>{{ label }}</h4><div class="kw-list">
+        {% for k in ks|sort(attribute='phrase') %}
+          <span class="kw-item {{ '' if k.enabled else 'kw-off' }} {{ 'kw-user' if k.user_defined }}">{{ k.phrase }}
+            <form method="post" action="/settings/keywords/{{ k.id }}/toggle" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="x" title="{{ 'Disable' if k.enabled else 'Enable' }}">{{ '−' if k.enabled else '+' }}</button></form>
+            {% if k.user_defined %}<form method="post" action="/settings/keywords/{{ k.id }}/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="x" title="Delete">×</button></form>{% endif %}
+          </span>
+        {% endfor %}</div>{% endif %}
+    {% endfor %}
+  </details>
+  {% endfor %}
+</section>
+
+<section class="card" id="geography">
+  <h2>Geographic filter</h2>
+  <form method="post" action="/settings/geography">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p class="small muted">Leave everything unselected to receive alerts from all of India. States are taken from consignee PIN codes in the tender document (India Post circles, approximate) or from the buyer's name.</p>
+    <div class="checks checks-states">
+      {% for st in states %}<label class="chk"><input type="checkbox" name="states" value="{{ st }}" {{ 'checked' if st in s.geography.states }}> {{ st }}</label>{% endfor %}
+    </div>
+    <label>PIN code prefixes (comma separated)<input name="pin_prefixes" value="{{ s.geography.pin_prefixes|join(', ') }}" placeholder="e.g. 110, 1220"></label>
+    <button class="btn btn-primary">Save geography</button>
+  </form>
+</section>
+
+<section class="card" id="sources">
+  <h2>Sources</h2>
+  <table class="tbl tbl-compact"><thead><tr><th>Source</th><th>Status</th><th>Notes</th><th></th></tr></thead><tbody>
+  {% for src in sources %}
+    <tr><td><b>{{ src.name }}</b><div class="small mono muted">{{ src.base_url }}</div></td>
+      <td>{{ status('enabled' if src.enabled else src.status) }}</td>
+      <td class="small">{{ src.notes or '' }}</td>
+      <td>{% if impl.get(src.key, False) %}<form method="post" action="/settings/sources/{{ src.key }}/toggle"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn">{{ 'Disable' if src.enabled else 'Enable' }}</button></form>{% else %}<span class="muted small">not available</span>{% endif %}</td></tr>
+  {% endfor %}</tbody></table>
+  <p class="note">Sources marked requires captcha / requires auth are not scraped: BidRadar never bypasses CAPTCHA, login or OTP.</p>
+</section>
+
+<section class="card" id="notifications">
+  <h2>Notifications</h2>
+  {% set n = s.notifications %}
+  <form method="post" action="/settings/notifications">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="chk"><input type="checkbox" name="enabled" value="1" {{ 'checked' if n.enabled }}> <b>Email alerts enabled</b></label>
+    <div class="checks">
+      {% for k, l in [('new_tender','New relevant tender'),('deadline_changed','Deadline changed'),('corrigendum','Corrigendum / amendment'),('eligibility_changed','Eligibility changed'),('cancelled','Tender cancelled'),('outcome','Outcome published')] %}
+      <label class="chk"><input type="checkbox" name="{{ k }}" value="1" {{ 'checked' if n[k] }}> {{ l }}</label>
+      {% endfor %}
+    </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" name="daily_enabled" value="1" {{ 'checked' if n.daily_summary.enabled }}> Daily summary at</label>
+      <label><select name="daily_hour">{% for h in range(24) %}<option value="{{ h }}" {{ 'selected' if n.daily_summary.hour_ist == h }}>{{ '%02d'|format(h) }}:00 IST</option>{% endfor %}</select></label>
+    </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" name="weekly_enabled" value="1" {{ 'checked' if n.weekly_summary.enabled }}> Weekly summary on</label>
+      <label><select name="weekly_day">{% for d in ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] %}<option value="{{ loop.index0 }}" {{ 'selected' if n.weekly_summary.weekday == loop.index0 }}>{{ d }}</option>{% endfor %}</select></label>
+      <label><select name="weekly_hour">{% for h in range(24) %}<option value="{{ h }}" {{ 'selected' if n.weekly_summary.hour_ist == h }}>{{ '%02d'|format(h) }}:00 IST</option>{% endfor %}</select></label>
+    </div>
+    <button class="btn btn-primary">Save notification preferences</button>
+  </form>
+</section>
+{% endblock %}

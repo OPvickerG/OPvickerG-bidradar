@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Error {{ code }}{% endblock %}
+{% block heading %}{{ 'Not found' if code == 404 else 'Something went wrong' }}{% endblock %}
+{% block subheading %}HTTP {{ code }}{% endblock %}
+{% block content %}<section class="card"><p>{{ detail }}</p><a class="btn" href="/">Back to overview</a></section>{% endblock %}
+{% block bare %}<div class="login"><div class="login-card"><p>{{ detail }}</p><a class="btn" href="/login">Sign in</a></div></div>{% endblock %}

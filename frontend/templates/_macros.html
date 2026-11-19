@@ -1,0 +1,25 @@
+{% macro score(s) -%}
+<span class="score {{ s|score_cls }}" title="{{ s|band }} relevance">{{ s }}</span>
+{%- endmacro %}
+
+{% macro status(st) -%}
+<span class="pill pill-{{ st }}">{{ st|replace('_', ' ') }}</span>
+{%- endmacro %}
+
+{% macro cat(code) -%}
+{% if code %}<span class="cat cat-{{ code }}" title="{{ CATEGORY_NAMES.get(code, '') }}">{{ code }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro tender_row(t) -%}
+<tr>
+  <td>{{ score(t.relevance_score) }}</td>
+  <td class="t-main">
+    <a href="/tenders/{{ t.id }}" class="t-title">{{ t.title[:140] }}</a>
+    <div class="t-meta">{{ cat(t.best_category) }} <span class="mono">{{ t.bid_number or t.external_id }}</span>{% if t.ra_number %} · RA{% endif %}
+      · {{ t.organization or t.department or t.ministry or '—' }}{% if t.state %} · {{ t.state }}{% endif %}{% if t.watched %} · <b class="watch">watched</b>{% endif %}</div>
+  </td>
+  <td class="nowrap">{{ t.deadline_at|ist }}<div class="t-meta">{{ t.deadline_at|until }}</div></td>
+  <td class="num">{{ t.estimated_value|money }}</td>
+  <td>{{ status(t.status) }}</td>
+</tr>
+{%- endmacro %}

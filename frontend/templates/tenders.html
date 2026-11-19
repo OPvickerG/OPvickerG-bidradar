@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import tender_row %}
+{% block title %}Tender Explorer{% endblock %}
+{% block heading %}Tender Explorer{% endblock %}
+{% block subheading %}{{ total }} tender{{ '' if total == 1 else 's' }} match these filters{% endblock %}
+{% block content %}
+<form class="filters card" method="get" action="/tenders">
+  <label class="f-wide">Search<input name="q" value="{{ f.q }}" placeholder="title, bid number, organisation…"></label>
+  <label>Category<select name="category"><option value="">All</option>
+    {% for c, n in CATEGORY_NAMES.items() %}<option value="{{ c }}" {{ 'selected' if f.category == c }}>{{ c }} · {{ n }}</option>{% endfor %}</select></label>
+  <label>Min score<select name="min_score">
+    {% for v, l in [('0','Any'),('25','25+ weak'),('50','50+ potentially relevant'),('75','75+ strong'),('90','90+ very strong')] %}
+    <option value="{{ v }}" {{ 'selected' if f.min_score == v }}>{{ l }}</option>{% endfor %}</select></label>
+  <label>Status<select name="status"><option value="">Any</option>
+    {% for s in ['active','closed','in_evaluation','awarded','cancelled'] %}<option value="{{ s }}" {{ 'selected' if f.status == s }}>{{ s|replace('_',' ') }}</option>{% endfor %}</select></label>
+  <label>State<select name="state"><option value="">All India</option>
+    {% for s in states %}<option {{ 'selected' if f.state == s }}>{{ s }}</option>{% endfor %}</select></label>
+  <label>Closing within<select name="closing_days"><option value="">Any time</option>
+    {% for d in ['1','3','7','14','30'] %}<option value="{{ d }}" {{ 'selected' if f.closing_days == d }}>{{ d }} day{{ '' if d == '1' else 's' }}</option>{% endfor %}</select></label>
+  <label>Source<select name="source"><option value="">All</option>
+    {% for s in sources %}<option value="{{ s.key }}" {{ 'selected' if f.source == s.key }}>{{ s.name.split('—')[0] }}</option>{% endfor %}</select></label>
+  <label>Min value (₹)<input name="min_value" value="{{ f.min_value }}" inputmode="numeric" placeholder="e.g. 500000"></label>
+  <label>Sort<select name="sort">
+    {% for v, l in [('score','Relevance'),('deadline','Deadline (soonest)'),('first_seen','Newest found'),('published','Published'),('value','Estimated value')] %}
+    <option value="{{ v }}" {{ 'selected' if sort == v }}>{{ l }}</option>{% endfor %}</select></label>
+  <label class="chk"><input type="checkbox" name="watched" value="1" {{ 'checked' if f.watched }}> Watchlist only</label>
+  <div class="f-actions"><button class="btn btn-primary">Apply</button> <a class="btn" href="/tenders">Reset</a></div>
+</form>
+
+<section class="card">
+  {% if rows %}
+  <table class="tbl"><thead><tr><th>Score</th><th>Tender</th><th>Deadline (IST)</th><th class="num">Est. value</th><th>Status</th></tr></thead>
+    <tbody>{% for t in rows %}{{ tender_row(t) }}{% endfor %}</tbody></table>
+  <div class="pager">
+    {% if page > 1 %}<a class="btn" href="/tenders?{{ urlencode(dict(qs, page=page-1)) }}">← Previous</a>{% endif %}
+    <span>Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn" href="/tenders?{{ urlencode(dict(qs, page=page+1)) }}">Next →</a>{% endif %}
+  </div>
+  {% else %}<p class="empty">No tenders match. Try lowering the minimum score or clearing filters.</p>{% endif %}
+</section>
+{% endblock %}

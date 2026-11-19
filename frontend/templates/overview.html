@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_macros.html" import tender_row, score, cat, status %}
+{% block title %}Overview{% endblock %}
+{% block heading %}Overview{% endblock %}
+{% block subheading %}Relevant opportunities across your six service categories · alert threshold {{ threshold }}{% endblock %}
+{% block content %}
+<section class="scanstrip {{ 'scanstrip-bad' if st.stale and not paused else '' }}">
+  <div>
+    <span class="k">Last scan</span>
+    {% if st.last %}<b>{{ st.last.slot_at|ist }}</b> {{ status(st.last.status) }}
+      <span class="muted">{{ st.last.trigger }}{% if st.last.stats.new_tenders is defined %} · {{ st.last.stats.new_tenders }} new · {{ st.last.stats.listings_seen }} listings{% endif %}</span>
+    {% else %}<b>No scan has run yet</b>{% endif %}
+  </div>
+  <div><span class="k">Next scheduled</span><b>{{ st.next_slot|ist }}</b></div>
+  <div><span class="k">Scanner</span>{% if st.running %}<b class="live">running now</b>{% else %}<b>idle</b>{% endif %}</div>
+  <div><span class="k">Last 24 h</span>
+    {% for k, v in st.counts24.items() %}<span class="mini">{{ k|replace('_',' ') }} {{ v }}</span>{% else %}<span class="muted">no runs</span>{% endfor %}</div>
+</section>
+{% if st.stale and not paused %}<div class="banner banner-err">No successful scan in the last 75 minutes. Check the Monitoring Centre.</div>{% endif %}
+
+<section class="kpis">
+  <a class="kpi" href="/tenders?min_score={{ threshold }}&status=active"><b>{{ kpi.active_relevant }}</b><span>Active relevant tenders</span></a>
+  <a class="kpi" href="/tenders?min_score={{ threshold }}&status=&sort=first_seen"><b>{{ kpi.new_24h }}</b><span>New in last 24 h</span></a>
+  <a class="kpi kpi-warn" href="/tenders?min_score={{ threshold }}&status=active&closing_days=3&sort=deadline"><b>{{ kpi.closing_3d }}</b><span>Closing within 3 days</span></a>
+  <a class="kpi" href="/tenders?min_score=0&status="><b>{{ kpi.tracked_total }}</b><span>Tenders in database</span></a>
+  <a class="kpi" href="/monitoring#mail"><b>{{ kpi.pending_mail }}</b><span>Alerts pending / held</span></a>
+</section>
+
+<div class="grid2">
+  <section class="card">
+    <h2>Latest relevant opportunities</h2>
+    {% if latest %}
+    <table class="tbl"><thead><tr><th>Score</th><th>Tender</th><th>Deadline</th><th class="num">Est. value</th><th>Status</th></tr></thead>
+      <tbody>{% for t in latest %}{{ tender_row(t) }}{% endfor %}</tbody></table>
+    {% else %}<p class="empty">No active tenders at or above the alert threshold yet.</p>{% endif %}
+  </section>
+  <div class="col">
+    <section class="card">
+      <h2>Closing soon</h2>
+      {% for t in closing %}
+        <div class="li"><a href="/tenders/{{ t.id }}">{{ t.title[:80] }}</a><span class="li-r">{{ t.deadline_at|until }}</span></div>
+      {% else %}<p class="empty">Nothing relevant closing soon.</p>{% endfor %}
+    </section>
+    <section class="card">
+      <h2>By category (active, ≥ {{ threshold }})</h2>
+      {% for code, name in CATEGORY_NAMES.items() %}
+        {% set n = by_cat.get(code, 0) %}
+        <a class="catbar" href="/tenders?category={{ code }}&min_score={{ threshold }}&status=active">
+          {{ cat(code) }}<span class="catbar-n">{{ name }}</span><b>{{ n }}</b></a>
+      {% endfor %}
+    </section>
+    <section class="card">
+      <h2>Sources</h2>
+      {% for s in sources %}
+        <div class="li"><span><span class="dot {{ 'dot-ok' if s.enabled and s.consecutive_failures == 0 else ('dot-err' if s.enabled else 'dot-mute') }}"></span> {{ s.name.split('—')[0] }}</span>
+          <span class="li-r">{{ 'enabled' if s.enabled else s.status|replace('_',' ') }}</span></div>
+      {% endfor %}
+    </section>
+  </div>
+</div>
+
+<section class="card">
+  <h2>Recent significant changes</h2>
+  {% for e, t in events %}
+    <div class="ev"><span class="ev-t">{{ e.observed_at|ist }}</span><span class="pill pill-ev">{{ e.event_type|replace('_',' ') }}</span>
+      <a href="/tenders/{{ t.id }}">{{ t.title[:90] }}</a>{% if e.new_value %}<span class="muted"> — {{ e.new_value[:120] }}</span>{% endif %}</div>
+  {% else %}<p class="empty">No significant changes recorded yet.</p>{% endfor %}
+</section>
+{% endblock %}
