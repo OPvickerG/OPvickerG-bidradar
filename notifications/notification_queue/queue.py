@@ -16,7 +16,7 @@ from backend import settings_service as cfg
 from core.config import get_settings
 from core.geo import matches_geography
 from core.logs import log
-from core.timeutil import fmt_ist, utcnow
+from core.timeutil import ensure_utc, fmt_ist, utcnow
 from database.schema.models import (EmailDeliveryAttempt, EmailNotification, Source, SuppressedNotification,
                                     Tender)
 from notifications.email_sender.senders import EmailSender, get_sender
@@ -157,8 +157,17 @@ def release_held(db: Session) -> int:
         return 0
     held = db.execute(select(EmailNotification).where(EmailNotification.status.in_(
         ["held_no_recipient", "held_unverified", "held_disabled"])).order_by(EmailNotification.created_at.desc())).scalars().all()
-    for i, n in enumerate(held):
-        if i < 20 and n.event_type not in ("daily_summary", "weekly_summary"):
+    released = 0
+    for n in held:
+        t = db.get(Tender, n.tender_id) if (n.tender_id and n.event_type == "new_tender") else None
+        if t is not None and not tender_qualifies(db, t):
+            n.status, n.last_error = "cancelled", "tender no longer matches the current settings"
+            continue
+        if t is not None and (t.status != "active" or (t.deadline_at and ensure_utc(t.deadline_at) <= utcnow())):
+            n.status, n.last_error = "cancelled", "tender closed before the alert could be sent"
+            continue
+        if released < 20 and n.event_type not in ("daily_summary", "weekly_summary"):
+            released += 1
             n.status, n.recipient, n.next_attempt_at = "pending", recipient, utcnow()
         else:
             n.status, n.last_error = "cancelled", "superseded: released only the newest 20 held alerts"
