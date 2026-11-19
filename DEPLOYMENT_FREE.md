@@ -1,5 +1,21 @@
 # Zero-cost deployment (no credit card)
 
+> **Finding (19 Nov 2026): GeM only accepts connections from India.**
+> - The first GitHub Actions scan reached the Neon database, but every connection to `bidplus.gem.gov.in` and
+>   `gem.gov.in` was refused.
+> - A check from 40 locations in 24 countries (USA, Europe, Hong Kong, Jakarta, Ho Chi Minh City and others) also
+>   failed everywhere.
+> - Connections from India succeed instantly.
+>
+> **What this means:** GitHub Actions (US servers) cannot scan GeM. The scanner must run on a server **located in
+> India**. Monitoring is paused until that exists. GitHub, Neon and the dashboard setup below remain valid.
+>
+> **India-located options:**
+> 1. Oracle Cloud Always Free VM in Mumbai/Hyderabad, running a GitHub self-hosted runner or cron. Free, but
+>    signup needs a card for verification.
+> 2. Google Cloud Run in asia-south1 (DEPLOYMENT.md). Needs a card; usage mostly within the free tier.
+> 3. A low-cost Indian VPS.
+
 This is the recommended setup when there is no budget. Every part runs in the cloud on free plans, so your
 computer can be off.
 

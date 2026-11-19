@@ -19,6 +19,9 @@ documents of likely matches, tracks changes, and emails a verified recipient.
 >   Render dashboard. This is the recommended path.
 > - [DEPLOYMENT.md](DEPLOYMENT.md): Google Cloud. Needs a billing account (card), about US$0.5–8/month.
 >
+> **19 Nov 2026 update:** the code is on GitHub (OPvickerG/OPvickerG-bidradar) with a Neon database connected.
+> The first cloud scan ran, but **GeM refuses all connections from outside India** (tested from 24 countries).
+> The scanner needs an India-located server, so monitoring is paused until one is set up (see DEPLOYMENT_FREE.md).
 > No alert recipient is configured and no real email has been sent.
 
 ## What it does
@@ -128,6 +131,7 @@ A local scan is only for development. Production scanning runs in the cloud (see
 
 - **GeM is the only source scanned in practice.** CPPP (eprocure.gov.in), state NIC portals and IREPS need CAPTCHA
   or login, and BidRadar does not bypass either.
+- **GeM is reachable only from Indian IP addresses** (verified 19 Nov 2026), so the scanner must run in India.
 - **The live GeM check could not be repeated from this development machine.** On 18 Nov 2026 the machine could not
   connect to `gem.gov.in` or `bidplus.gem.gov.in`, while other government sites responded. This is most likely
   throttling after earlier research traffic. All GeM behaviour is covered by synthetic tests built from the
