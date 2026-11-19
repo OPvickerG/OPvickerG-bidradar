@@ -114,6 +114,8 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
             return result
         try:
             seed(db)                       # idempotent; runs under the lock so workers never race
+            from scanner.discovery.pipeline import rescore_if_rules_changed
+            rescore_if_rules_changed(db)   # no-op unless the matching rules changed since the last scan
             missed = record_missed(db, slot) if trigger == "scheduler" else 0
             ex = _claim_execution(db, slot, trigger, wid)
             if ex is None:
