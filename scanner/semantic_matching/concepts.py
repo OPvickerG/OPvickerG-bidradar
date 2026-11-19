@@ -10,6 +10,7 @@ between the tender text and each category description. It is OFF by default (no 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import List, Optional, Tuple
 
 from scanner.keyword_engine.model import CategoryModel, Term
@@ -48,6 +49,25 @@ def _segments(toks: List[str]) -> List[int]:
     return out
 
 
+_PART_NO = re.compile(r"^[a-z]{0,5}\d{5,}[a-z0-9]*$")
+_JOB_STEMS = ("repair", "overhaul", "recondition", "rewind", "servic", "maintenanc", "rectif", "refurbish")
+
+
+def _catalogue_segments(toks: List[str], seg: List[int]) -> set:
+    """Segments that are lines of a parts catalogue (a part number, no repair/service verb). In such a line
+    words like 'facing' or 'grinding' describe the part ('clutch disc ... facing'), not a job."""
+    by_seg: dict = {}
+    for t, s in zip(toks, seg):
+        by_seg.setdefault(s, []).append(t)
+    out = set()
+    for s, ts in by_seg.items():
+        has_part_no = any(_PART_NO.match(t) for t in ts)
+        has_job = any(t.startswith(j) for t in ts for j in _JOB_STEMS)
+        if has_part_no and not has_job:
+            out.add(s)
+    return out
+
+
 def _content_index(toks: List[str]) -> List[int]:
     """Position of each token counting only meaningful tokens (numbers, units and stop-words are skipped)."""
     out, n = [], 0
@@ -64,6 +84,7 @@ def best_concept_hit(model: CategoryModel, text: str) -> Optional[ConceptHit]:
         return None
     ci = _content_index(toks)
     sg = _segments(toks)
+    catalogue = _catalogue_segments(toks, sg)
     best: Optional[ConceptHit] = None
     obj_pos: List[Tuple[Term, int]] = [(o, i) for o in model.objects for i in _positions(toks, o)]
     if not obj_pos:
@@ -71,8 +92,8 @@ def best_concept_hit(model: CategoryModel, text: str) -> Optional[ConceptHit]:
     act_pos: List[Tuple[Term, int]] = [(a, i) for a in model.actions for i in _positions(toks, a)]
     for o, oi in obj_pos:
         for a, ai in act_pos:
-            if sg[oi] != sg[ai]:
-                continue                 # object and action belong to different list items
+            if sg[oi] != sg[ai] or sg[oi] in catalogue:
+                continue                 # different list items, or a parts-catalogue line
             d = abs(ci[oi] - ci[ai])
             prox = 1.0 if d <= 4 else 0.75 if d <= 10 else 0.45 if d <= 25 else 0.2
             strength = prox * a.weight * o.weight
