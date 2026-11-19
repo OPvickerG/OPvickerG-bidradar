@@ -35,6 +35,19 @@ _FILLER = {"of", "for", "the", "and", "to", "in", "with", "at", "on", "a", "an",
            "kva", "kw", "hp", "cc", "nos", "no", "qty", "unit", "set", "sets", "model", "make", "various", "x"}
 
 
+SEPARATOR = "zzsepzz"
+
+
+def _segments(toks: List[str]) -> List[int]:
+    """Segment number of each token; list separators (commas, semicolons) start a new segment."""
+    out, seg = [], 0
+    for t in toks:
+        if t == SEPARATOR:
+            seg += 1
+        out.append(seg)
+    return out
+
+
 def _content_index(toks: List[str]) -> List[int]:
     """Position of each token counting only meaningful tokens (numbers, units and stop-words are skipped)."""
     out, n = [], 0
@@ -50,6 +63,7 @@ def best_concept_hit(model: CategoryModel, text: str) -> Optional[ConceptHit]:
     if not toks:
         return None
     ci = _content_index(toks)
+    sg = _segments(toks)
     best: Optional[ConceptHit] = None
     obj_pos: List[Tuple[Term, int]] = [(o, i) for o in model.objects for i in _positions(toks, o)]
     if not obj_pos:
@@ -57,6 +71,8 @@ def best_concept_hit(model: CategoryModel, text: str) -> Optional[ConceptHit]:
     act_pos: List[Tuple[Term, int]] = [(a, i) for a in model.actions for i in _positions(toks, a)]
     for o, oi in obj_pos:
         for a, ai in act_pos:
+            if sg[oi] != sg[ai]:
+                continue                 # object and action belong to different list items
             d = abs(ci[oi] - ci[ai])
             prox = 1.0 if d <= 4 else 0.75 if d <= 10 else 0.45 if d <= 25 else 0.2
             strength = prox * a.weight * o.weight
