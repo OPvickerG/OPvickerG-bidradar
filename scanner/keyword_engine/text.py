@@ -17,6 +17,7 @@ _REPLACEMENTS = [
     (r"\bannual\s+maintenance\s+contracts?\b", " amc "),
     (r"\bcomprehensive\s+maintenance\s+contracts?\b", " cmc "),
     (r"&", " and "),
+    (r"\bmachines?\b", " machineunit "),                     # a machine is equipment; "machining" is the job
     (r"\bface\s*plates?\b", " faceplate "),                  # a face plate is a part, not "plate facing" work
     # a kit is a part, not a job: "major repair kit" must not count as the action "repair"
     (r"\b(repair|repairing|overhaul|overhauling|service|servicing)\s+kits?\b", " partskit "),
