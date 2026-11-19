@@ -3,6 +3,9 @@
 {% if change_summary %}WHAT CHANGED:
 {{ change_summary }}
 
+{% endif %}{% if summary %}IN SHORT:
+{{ summary }}
+
 {% endif %}Tender ID: {{ t.bid_number or t.external_id }}{% if t.ra_number %} (Reverse auction: {{ t.ra_number }}){% endif %}
 Source: {{ source_name }}
 Organization: {{ org }}
