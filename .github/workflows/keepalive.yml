@@ -1,0 +1,24 @@
+# GitHub disables scheduled workflows in public repositories after 60 days without repository activity.
+# This monthly commit of a timestamp file counts as activity and keeps the scanner schedule enabled.
+name: Keep schedule alive
+
+on:
+  schedule:
+    - cron: "17 3 1 * *"      # 03:17 UTC on the 1st of every month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +%Y-%m-%dT%H:%M:%SZ > .github/keepalive.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive.txt
+          git commit -m "chore: keep scheduled scans enabled ($(date -u +%F))"
+          git push

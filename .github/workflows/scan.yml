@@ -1,0 +1,59 @@
+# OPvickerG BidRadar — scheduled scanner on GitHub Actions (zero-cost hosting option).
+# GitHub cron is in UTC. IST = UTC+5:30, so minute 0 and minute 30 UTC are exactly :30 and :00 IST:
+# every IST :00 and :30 slot is covered. Two entries let the scanner know which slot a (possibly late) run is for.
+name: BidRadar scan
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+    - cron: "30 * * * *"
+  workflow_dispatch:
+    inputs:
+      trigger:
+        description: "Run type"
+        type: choice
+        options: [manual, scheduler]
+        default: manual
+
+concurrency:
+  group: bidradar-scan          # never two scans at once (the database lock is a second safety net)
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      APP_ENV: production
+      TZ: UTC
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+      EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'console' }}
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
+      SMTP_USERNAME: ${{ vars.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SCANNER_REQUEST_DELAY: ${{ vars.SCANNER_REQUEST_DELAY || '3' }}
+      SCHEDULED_MINUTE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 * * * *' && '30' || '0') || '' }}
+      SCAN_TRIGGER: ${{ github.event_name == 'schedule' && 'scheduler' || inputs.trigger }}
+    steps:
+      - name: Check configuration
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Repository secret DATABASE_URL is not set"; exit 1; fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Migrate database
+        run: alembic upgrade head
+      - name: Scan
+        run: python -m scanner.scheduler.run --trigger "$SCAN_TRIGGER"
