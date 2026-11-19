@@ -17,6 +17,11 @@ _REPLACEMENTS = [
     (r"\bannual\s+maintenance\s+contracts?\b", " amc "),
     (r"\bcomprehensive\s+maintenance\s+contracts?\b", " cmc "),
     (r"&", " and "),
+    (r"\bface\s*plates?\b", " faceplate "),                  # a face plate is a part, not "plate facing" work
+    # a kit is a part, not a job: "major repair kit" must not count as the action "repair"
+    (r"\b(repair|repairing|overhaul|overhauling|service|servicing)\s+kits?\b", " partskit "),
+    # list separators are hard boundaries so phrases/concepts never span two different items
+    (r"[,;|\n]+", " zzsepzz "),
 ]
 _NON_WORD = re.compile(r"[^a-z0-9]+")
 _STOP = {"of", "the", "for", "and", "to", "in", "on", "with", "a", "an", "at", "by", "or", "as", "per", "is", "be"}
