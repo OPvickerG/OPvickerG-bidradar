@@ -26,6 +26,7 @@ from notifications.notification_queue import queue as nq
 from scanner.bid_analysis.gem_document import eligibility_summary, parse_gem_bid_text, requirements_summary
 from scanner.bid_analysis.issues import missing_information, potential_issues
 from scanner.bid_analysis.relevance import score_tender
+from scanner.bid_analysis.summary import clean_place, summarize
 from scanner.change_detection.detector import (EVENT_TO_PREF, Change, diff_corrigenda, diff_eligibility,
                                                diff_listing, diff_outcome, state_fingerprint)
 from scanner.document_processing.extract import extract_pdf
@@ -55,6 +56,7 @@ class Scan:
                             "relevant_new": 0, "documents_analysed": 0, "refreshed": 0, "events": 0,
                             "notifications_queued": 0, "errors": 0, "requests": 0}
         self.seen: Set[tuple] = set()
+        self._known: Dict[tuple, Optional[Tender]] = {}
         self.down: Set[str] = set()                # sources whose circuit breaker opened during this scan
         self.touched: Dict[int, Tender] = {}
         self.pending_changes: List[tuple] = []     # (tender, Change)
@@ -158,6 +160,7 @@ class Scan:
                     if not raws:
                         break
                     fresh = 0
+                    self._prefetch(raws)          # one query per page instead of one per listing
                     for raw in raws:
                         outcome = self.upsert(raw)
                         st["listings"] += 1
@@ -197,6 +200,17 @@ class Scan:
             self.error("discovery", f"source failed: {e}", src.key, detail=traceback.format_exc())
         src.updated_at = utcnow()
 
+    def _prefetch(self, raws: List[RawTender]) -> None:
+        by_source: Dict[str, List[str]] = {}
+        for r in raws:
+            if (r.source_key, r.external_id) not in self.seen:
+                by_source.setdefault(r.source_key, []).append(r.external_id)
+        for src, ids in by_source.items():
+            for t in self.db.execute(select(Tender).where(Tender.source_key == src, Tender.external_id.in_(ids))).scalars():
+                self._known[(t.source_key, t.external_id)] = t
+            for i in ids:
+                self._known.setdefault((src, i), None)
+
     @staticmethod
     def raw_state(raw: RawTender) -> Dict:
         return {"title": raw.title, "description": raw.description, "deadline_at": raw.deadline_at,
@@ -216,8 +230,11 @@ class Scan:
         self.seen.add(key)
         self.stats["listings_seen"] += 1
         db = self.db
-        t = db.execute(select(Tender).where(Tender.source_key == raw.source_key,
-                                            Tender.external_id == raw.external_id)).scalar_one_or_none()
+        if key in self._known:
+            t = self._known[key]
+        else:
+            t = db.execute(select(Tender).where(Tender.source_key == raw.source_key,
+                                                Tender.external_id == raw.external_id)).scalar_one_or_none()
         now = utcnow()
         if t is None:
             t = Tender(source_key=raw.source_key, external_id=raw.external_id, title=raw.title, details={},
@@ -228,7 +245,7 @@ class Scan:
             db.flush()
             self.score(t)
             self.event(t, Change("discovered", None, None, raw.bid_number or raw.external_id, False))
-            self.observe(t)
+            self.observe(t, new=True)
             self.touched[t.id] = t
             self.stats["new_tenders"] += 1
             if t.relevance_score >= RELEVANT_MIN_SCORE:
@@ -275,7 +292,7 @@ class Scan:
         t.details = d
         t.last_verified_at = utcnow()
 
-    def observe(self, t: Tender):
+    def observe(self, t: Tender, new: bool = False):
         st = self.tender_state(t)
         fp = state_fingerprint(st)
         if fp == t.fingerprint:
@@ -283,8 +300,8 @@ class Scan:
         t.fingerprint = fp
         ser = {k: (fmt_ist(v) if hasattr(v, "tzinfo") else (float(v) if v is not None and not isinstance(v, (str, list, int)) else v))
                for k, v in st.items()}
-        existing = self.db.execute(select(BidObservation).where(BidObservation.tender_id == t.id,
-                                                                BidObservation.scan_id == self.ex.id)).scalar_one_or_none()
+        existing = None if new else self.db.execute(select(BidObservation).where(
+            BidObservation.tender_id == t.id, BidObservation.scan_id == self.ex.id)).scalar_one_or_none()
         if existing:
             existing.fingerprint, existing.state, existing.observed_at = fp, ser, utcnow()
         else:
@@ -314,6 +331,9 @@ class Scan:
         d["issues"] = potential_issues(t.deadline_at, f, d.get("doc_status"))
         d["missing"] = missing_information({"estimated_value": t.estimated_value, "emd": t.emd or (f.get("emd_required") == "No"),
                                             "contract_duration": t.contract_duration, "location": t.location or t.state})
+        t.details = d
+        d = dict(t.details)
+        d["summary"] = summarize(t)
         t.details = d
 
     # ------------------------------------------------------------------ documents
@@ -418,8 +438,8 @@ class Scan:
         if states:
             t.state = states[0]
             t.location = ", ".join(sorted(set(states))) + f" (PIN {', '.join(pins[:3])}{'…' if len(pins) > 3 else ''})"
-        elif f.get("office"):
-            t.location = t.location or f["office"]
+        elif clean_place(f.get("office")):
+            t.location = t.location or clean_place(f["office"])
         if not t.state:
             t.state = state_from_text(t.ministry, t.department, t.organization)
 
@@ -628,7 +648,7 @@ def rescore_all(db: Session, only_active: bool = False) -> int:
 
 _RULE_FILES = ("database/seed/categories.yaml", "scanner/bid_analysis/relevance.py", "scanner/keyword_engine/text.py",
                "scanner/keyword_engine/matcher.py", "scanner/keyword_engine/model.py",
-               "scanner/semantic_matching/concepts.py")
+               "scanner/semantic_matching/concepts.py", "scanner/bid_analysis/summary.py")
 
 
 def scoring_fingerprint() -> str:
