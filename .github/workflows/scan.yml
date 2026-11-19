@@ -24,7 +24,8 @@ permissions:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    # GeM only accepts connections from India, so scans run on the self-hosted runner in Oracle Mumbai.
+    runs-on: [self-hosted, india]
     timeout-minutes: 28
     env:
       APP_ENV: production
@@ -63,13 +64,17 @@ jobs:
           echo "DATABASE_URL=$uri" >> "$GITHUB_ENV"
           echo "Database connection resolved from Neon project $NEON_PROJECT_ID"
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install
-        run: pip install -r requirements.txt
+      - name: Install (persistent virtualenv on the runner, rebuilt when requirements change)
+        run: |
+          VENV="$HOME/bidradar-venv"
+          STAMP="$VENV/.req-$(sha256sum requirements.txt | cut -c1-16)"
+          if [ ! -f "$STAMP" ]; then
+            rm -rf "$VENV" && python3 -m venv "$VENV"
+            "$VENV/bin/pip" install --quiet --upgrade pip
+            "$VENV/bin/pip" install --quiet -r requirements.txt
+            touch "$STAMP"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
       - name: Migrate database
         run: alembic upgrade head
       - name: Scan
