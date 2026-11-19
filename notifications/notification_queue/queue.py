@@ -58,6 +58,7 @@ def render_tender_email(db: Session, t: Tender, event_type: str, change_summary:
     category = CATEGORY_NAMES.get(t.best_category or "", "—")
     ctx = dict(
         heading=HEADINGS.get(event_type, "TENDER UPDATE"), change_summary=change_summary, t=t,
+        summary=d.get("summary"),
         source_name=src.name if src else t.source_key,
         org=" / ".join(x for x in [t.organization, t.department, t.ministry] if x) or "—",
         location=t.location or t.state or "Not extracted", category=category, band=band(t.relevance_score),
@@ -72,7 +73,8 @@ def render_tender_email(db: Session, t: Tender, event_type: str, change_summary:
                     ("Submission deadline", ctx["deadline"]), ("Estimated value", ctx["est_value"]),
                     ("EMD", ctx["emd"]), ("Contract duration", ctx["duration"]), ("Status", ctx["status"]),
                     ("Source", ctx["source_name"])]
-    ctx["sections"] = [("WHY THIS TENDER MATCHES", t.match_explanation or "—"),
+    ctx["sections"] = ([("IN SHORT", ctx["summary"])] if ctx["summary"] else []) + [
+                      ("WHY THIS TENDER MATCHES", t.match_explanation or "—"),
                        ("IMPORTANT REQUIREMENTS", ctx["requirements"]), ("ELIGIBILITY", ctx["eligibility"]),
                        ("POTENTIAL ISSUES", ctx["issues"])]
     text = _env.get_template("tender_alert.txt.j2").render(**ctx)
