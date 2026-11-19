@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import List
 
 _REPLACEMENTS = [
@@ -57,6 +58,7 @@ def _stem(tok: str) -> str:
     return t
 
 
+@lru_cache(maxsize=8192)
 def normalise(text: str) -> str:
     t = " " + (text or "").lower() + " "
     for pat, rep in _REPLACEMENTS:
@@ -66,7 +68,7 @@ def normalise(text: str) -> str:
 
 
 def tokens(text: str, drop_stopwords: bool = False) -> List[str]:
-    toks = [_stem(w) for w in normalise(text).split()]
+    toks = list(_tokens_cached(text or ""))
     if drop_stopwords:
         toks = [w for w in toks if w not in _STOP]
     return toks
@@ -76,6 +78,12 @@ def stem_phrase(phrase: str) -> str:
     return " ".join(tokens(phrase))
 
 
+@lru_cache(maxsize=8192)
+def _tokens_cached(text: str) -> tuple:
+    return tuple(_stem(w) for w in normalise(text).split())
+
+
+@lru_cache(maxsize=8192)
 def padded(text: str) -> str:
     """Stemmed token string padded with spaces so ' phrase ' lookups respect word boundaries."""
     return " " + " ".join(tokens(text)) + " "
