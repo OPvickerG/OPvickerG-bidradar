@@ -35,6 +35,7 @@ from scanner.source_adapters.registry import adapter_classes
 
 logger = logging.getLogger("bidradar.scan")
 DOC_ANALYSIS_MIN_SCORE = 40
+SWEEP_MEMORY = 6000              # bid numbers remembered by the all-bids sweep (about two days of new bids)
 RELEVANT_MIN_SCORE = 50          # stored flag used by the dashboard; alerts use the user's threshold
 DOC_TEXT_KEEP = 20000            # redacted English text kept for re-scoring (never personal data)
 
@@ -51,7 +52,8 @@ class Scan:
         self.injected = adapters
         self.adapters: Dict[str, SourceAdapter] = {}
         self.max_pages = self.s.backfill_pages_per_term if catch_up else self.s.max_pages_per_term
-        self.deadline = time.monotonic() + (time_budget_s or (self.s.scan_lease_minutes - 4) * 60)
+        self.deadline = time.monotonic() + (time_budget_s or self.s.scan_time_budget_minutes * 60)
+        self.should_stop: Callable[[], bool] = lambda: False    # set by the runner if this worker lost its lock
         self.stats: Dict = {"sources": {}, "listings_seen": 0, "new_tenders": 0, "updated_tenders": 0,
                             "relevant_new": 0, "documents_analysed": 0, "refreshed": 0, "events": 0,
                             "notifications_queued": 0, "errors": 0, "requests": 0}
@@ -65,7 +67,7 @@ class Scan:
 
     # ------------------------------------------------------------------ helpers
     def _time_left(self) -> bool:
-        return time.monotonic() < self.deadline
+        return time.monotonic() < self.deadline and not self.should_stop()
 
     def error(self, stage: str, msg: str, source_key: Optional[str] = None, tender_ref: Optional[str] = None,
               detail: Optional[str] = None):
@@ -111,6 +113,7 @@ class Scan:
         try:
             for src in sources:
                 self.discover(src, terms)
+                self.sweep(src)
             self.analyse_documents()
             self.refresh_tracked()
             self.close_expired()
@@ -122,10 +125,11 @@ class Scan:
                     a.close()
                 except Exception:
                     pass
-        try:
-            self.stats["email"] = nq.process_pending(db, sender=self.sender)
-        except Exception as e:
-            self.error("notify", f"queue processing failed: {e}", detail=traceback.format_exc())
+        if self.s.send_email:      # a helper machine only queues; the always-on server sends
+            try:
+                self.stats["email"] = nq.process_pending(db, sender=self.sender)
+            except Exception as e:
+                self.error("notify", f"queue processing failed: {e}", detail=traceback.format_exc())
         self.summaries()
         return self.stats
 
@@ -199,6 +203,65 @@ class Scan:
                 src.status = "inaccessible"
             self.error("discovery", f"source failed: {e}", src.key, detail=traceback.format_exc())
         src.updated_at = utcnow()
+
+    def sweep(self, src: Source) -> None:
+        """Read the newest pages of ALL open bids, so a new bid is looked at even when none of the search terms
+        finds it. Every listing is scored; only those that could match a category are stored (the free database
+        stays small). Bid numbers already checked are remembered, so each page is only scored once."""
+        a = self.adapter(src.key)
+        fetch = getattr(a, "fetch_latest", None)
+        if fetch is None or self.s.sweep_pages <= 0 or src.key in self.down:
+            return
+        st = self.stats["sources"].setdefault(src.key, {"pages": 0, "listings": 0, "new": 0, "changed": 0,
+                                                         "status": "ok"})
+        sw = self.stats.setdefault("sweep", {"pages": 0, "checked": 0, "kept": 0})
+        mem = cfg.get(self.db, "sweep_seen")
+        ids = list(mem.get("ids") or []) if isinstance(mem, dict) else []
+        known, quiet = set(ids), 0
+        try:
+            for page in range(1, self.s.sweep_pages + 1):
+                if not self._time_left():
+                    break
+                try:
+                    raws = fetch(page)
+                except SourceUnavailable as e:
+                    self.error("sweep", f"source unavailable: {e}", src.key)
+                    break
+                except Exception as e:
+                    self.error("sweep", f"{type(e).__name__}: {e}", src.key, detail=f"page={page}")
+                    break
+                sw["pages"] += 1
+                if not raws:
+                    break
+                fresh = [r for r in raws if r.external_id not in known]
+                for r in fresh:
+                    known.add(r.external_id)
+                    ids.append(r.external_id)
+                if not fresh:
+                    quiet += 1             # scheduled reverse auctions can sit above new bids: allow one quiet page
+                    if quiet >= 2:
+                        break
+                    continue
+                quiet = 0
+                self._prefetch(fresh)
+                for raw in fresh:
+                    key = (raw.source_key, raw.external_id)
+                    if key in self.seen:
+                        continue
+                    sw["checked"] += 1
+                    if self._known.get(key) is None:
+                        r = score_tender(raw.title, raw.description or "", "", raw.procurement_type, self.models,
+                                         self.embedder)
+                        if r.score < self.s.sweep_keep_min_score:
+                            continue
+                        sw["kept"] += 1
+                    outcome = self.upsert(raw)
+                    st["listings"] += 1
+                    if outcome in ("new", "changed"):
+                        st[outcome] += 1
+                self.db.flush()
+        finally:
+            cfg.put(self.db, "sweep_seen", {"ids": ids[-SWEEP_MEMORY:]})
 
     def _prefetch(self, raws: List[RawTender]) -> None:
         by_source: Dict[str, List[str]] = {}
