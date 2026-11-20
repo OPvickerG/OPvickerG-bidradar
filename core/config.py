@@ -55,7 +55,16 @@ class Settings:
     backfill_pages_per_term: int = field(default_factory=lambda: _int("SCANNER_BACKFILL_PAGES_PER_TERM", 4))
     max_documents_per_scan: int = field(default_factory=lambda: _int("SCANNER_MAX_DOCUMENTS_PER_SCAN", 40))
     max_refreshes_per_scan: int = field(default_factory=lambda: _int("SCANNER_MAX_REFRESHES_PER_SCAN", 40))
-    scan_lease_minutes: int = field(default_factory=lambda: _int("SCAN_LEASE_MINUTES", 25))
+    scan_lease_minutes: int = field(default_factory=lambda: _int("SCAN_LEASE_MINUTES", 8))
+    # how long one scan may run; the lock lease is renewed every minute while it runs
+    scan_time_budget_minutes: int = field(default_factory=lambda: _int("SCAN_TIME_BUDGET_MINUTES", 21))
+    # newest-first pages of ALL open GeM bids read each scan (every new bid is scored; only matches are stored)
+    sweep_pages: int = field(default_factory=lambda: _int("SCANNER_SWEEP_PAGES", 12))
+    sweep_keep_min_score: int = field(default_factory=lambda: _int("SCANNER_SWEEP_KEEP_MIN_SCORE", 50))
+    # hybrid scanning: "server" (always on, sends email) or "helper" (a faster machine that scans first when awake)
+    scan_role: str = field(default_factory=lambda: (os.environ.get("SCAN_ROLE") or "server").strip().lower())
+    send_email: bool = field(default_factory=lambda: _bool("SEND_EMAIL", True))
+    helper_grace_minutes: int = field(default_factory=lambda: _int("HELPER_GRACE_MINUTES", 4))
     scan_interval_minutes: int = 30
     source_failure_threshold: int = field(default_factory=lambda: _int("SOURCE_FAILURE_THRESHOLD", 3))
     user_agent: str = field(default_factory=lambda: os.environ.get(
