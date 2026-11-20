@@ -144,3 +144,11 @@ body.bare { background: radial-gradient(circle at 30% 20%, #1b3043 0, var(--side
 }
 
 .pw-login { margin-top: 16px; font-size: 13px; color: var(--ink-2); } .pw-login summary { cursor: pointer; margin-bottom: 10px; }
+
+/* "Check a bid" box in the page header */
+.top-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:flex-end}
+.checkbid{display:flex;gap:6px}
+.checkbid input{width:260px;max-width:52vw;padding:6px 10px;border:1px solid var(--line,#d0d7de);border-radius:6px;font:inherit;font-size:13px}
+.coverage{display:grid;gap:8px}
+.coverage .k{display:inline-block;min-width:210px;color:var(--muted,#667);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.warn-text{color:#9a5b00}
