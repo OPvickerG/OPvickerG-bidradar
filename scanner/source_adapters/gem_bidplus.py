@@ -198,6 +198,14 @@ class GemBidPlusAdapter(SourceAdapter):
             return []
         return [doc_to_raw(d, "ongoing_bids") for d in resp.get("docs", [])]
 
+    def fetch_latest(self, page: int) -> List[RawTender]:
+        """Newest open bids of every kind (no search term) — used by the all-bids sweep."""
+        try:
+            resp = self._query({}, search="", page=page)
+        except NoResults:
+            return []
+        return [doc_to_raw(d, "ongoing_bids") for d in resp.get("docs", [])]
+
     def lookup(self, number: str) -> Optional[RawTender]:
         for mode in ("ongoing_bids", "bidrastatus", "cancelled_bids"):
             try:
