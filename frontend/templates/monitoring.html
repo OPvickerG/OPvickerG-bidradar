@@ -17,6 +17,20 @@
 </section>
 
 <section class="card">
+  <h2>Coverage: every open bid on GeM</h2>
+  <div class="coverage">
+    <div><span class="k">New bids</span><b>newest-first sweep every scan</b><span class="muted">every new GeM bid is scored within 30 min</span></div>
+    <div><span class="k">Full GeM crawl</span>
+      {% if crawl.pages_total %}<b>{{ crawl.pct }}% of current pass</b> <span class="muted">page {{ crawl.page }} of ~{{ crawl.pages_total }} · {{ '{:,}'.format(crawl.total_bids) }} open bids</span>
+      {% else %}<b>starting</b>{% endif %}
+      {% if crawl.paused %}<b class="warn-text">paused until {{ crawl.paused_until|ist }} (GeM throttling)</b>{% endif %}
+    </div>
+    <div><span class="k">Last full pass</span>{% if crawl.last_pass_finished %}<b>{{ crawl.last_pass_finished|ist }}</b> <span class="muted">{{ '{:,}'.format(crawl.last_pass_checked or 0) }} bids checked, {{ crawl.last_pass_kept or 0 }} possible matches kept · passes completed: {{ crawl.passes }}</span>{% else %}<b>first pass in progress</b>{% endif %}</div>
+    <div><span class="k">Misses found by "Check a bid"</span><b>{{ misses }}</b> <span class="muted">a matching bid you looked up that the scans had not found</span></div>
+  </div>
+</section>
+
+<section class="card">
   <h2>Scan executions</h2>
   <table class="tbl tbl-compact"><thead><tr><th>Slot (IST)</th><th>Ran on</th><th>Status</th><th>Duration</th><th class="num">Bids checked</th>
     <th class="num">Listings</th><th class="num">New</th><th class="num">Relevant new</th><th class="num">Docs</th><th class="num">Refreshed</th><th class="num">Alerts</th><th class="num">Errors</th><th>Note</th></tr></thead><tbody>
@@ -24,7 +38,7 @@
     <tr class="{{ 'row-bad' if s.status in ('failed','missed') }}">
       <td class="nowrap">{{ s.slot_at|ist }}</td><td>{% if not s.worker_id %}—{% elif s.worker_id.startswith('mac-helper') %}Mac{% else %}Server{% endif %}{% if s.trigger != 'scheduler' %} <span class="muted small">{{ s.trigger }}</span>{% endif %}</td><td>{{ status(s.status) }}</td>
       <td class="nowrap">{% if s.started_at and s.finished_at %}{{ ((s.finished_at - s.started_at).total_seconds()|int) // 60 }}m {{ ((s.finished_at - s.started_at).total_seconds()|int) % 60 }}s{% else %}—{% endif %}</td>
-      <td class="num">{{ (x.listings_seen or 0) + ((x.sweep or {}).checked or 0) - ((x.sweep or {}).kept or 0) if x.listings_seen is defined else '—' }}</td>
+      <td class="num">{{ (x.listings_seen or 0) + ((x.sweep or {}).checked or 0) - ((x.sweep or {}).kept or 0) + ((x.deep_crawl or {}).listed or 0) - ((x.deep_crawl or {}).kept or 0) if x.listings_seen is defined else '—' }}</td>
       <td class="num">{{ x.listings_seen if x.listings_seen is defined else '—' }}</td><td class="num">{{ x.new_tenders if x.new_tenders is defined else '—' }}</td>
       <td class="num">{{ x.relevant_new if x.relevant_new is defined else '—' }}</td><td class="num">{{ x.documents_analysed if x.documents_analysed is defined else '—' }}</td>
       <td class="num">{{ x.refreshed if x.refreshed is defined else '—' }}</td><td class="num">{{ x.notifications_queued if x.notifications_queued is defined else '—' }}</td>
