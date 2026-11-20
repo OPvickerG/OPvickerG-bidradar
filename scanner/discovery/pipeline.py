@@ -6,9 +6,10 @@ events or notifications (unique constraints + dedupe keys)."""
 from __future__ import annotations
 
 import logging
+import re
 import time
 import traceback
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Set
 
 from sqlalchemy import or_, select
@@ -19,8 +20,8 @@ from core.config import get_settings
 from core.geo import state_from_pin, state_from_text
 from core.logs import log
 from core.timeutil import IST, ensure_utc, fmt_ist, parse_ist_string, to_ist, utcnow
-from database.schema.models import (BidObservation, EmailNotification, ScanError, ScanExecution, Source, Tender,
-                                    TenderDocument, TenderEvent, TenderMatch)
+from database.schema.models import (BidObservation, EmailNotification, ScanError, ScanExecution, Source,
+                                    SystemEvent, Tender, TenderDocument, TenderEvent, TenderMatch)
 from database.seed.loader import load_models
 from notifications.notification_queue import queue as nq
 from scanner.bid_analysis.gem_document import eligibility_summary, parse_gem_bid_text, requirements_summary
@@ -96,7 +97,7 @@ class Scan:
         return a
 
     # ------------------------------------------------------------------ run
-    def run(self) -> Dict:
+    def load_models(self):
         db = self.db
         self.models = [m for m in load_models(db)]
         enabled_codes = set(cfg.get(db, "matching").get("enabled_categories") or [])
@@ -108,6 +109,10 @@ class Scan:
                 self.embedder = EmbeddingScorer([m for m in self.models if m.enabled])
             except Exception as e:
                 self.error("matching", f"embedding backend unavailable: {e}")
+
+    def run(self) -> Dict:
+        db = self.db
+        self.load_models()
         terms = list(dict.fromkeys(t for m in self.models if m.enabled for t in m.discovery))
         sources = db.execute(select(Source).where(Source.enabled.is_(True)).order_by(Source.id)).scalars().all()
         try:
@@ -117,6 +122,8 @@ class Scan:
             self.analyse_documents()
             self.refresh_tracked()
             self.close_expired()
+            for src in sources:
+                self.deep_crawl(src)
             self.notify()
         finally:
             for a in self.adapters.values():
@@ -243,25 +250,85 @@ class Scan:
                         break
                     continue
                 quiet = 0
-                self._prefetch(fresh)
-                for raw in fresh:
-                    key = (raw.source_key, raw.external_id)
-                    if key in self.seen:
-                        continue
-                    sw["checked"] += 1
-                    if self._known.get(key) is None:
-                        r = score_tender(raw.title, raw.description or "", "", raw.procurement_type, self.models,
-                                         self.embedder)
-                        if r.score < self.s.sweep_keep_min_score:
-                            continue
-                        sw["kept"] += 1
-                    outcome = self.upsert(raw)
-                    st["listings"] += 1
-                    if outcome in ("new", "changed"):
-                        st[outcome] += 1
-                self.db.flush()
+                self._consider(fresh, st, sw)
         finally:
             cfg.put(self.db, "sweep_seen", {"ids": ids[-SWEEP_MEMORY:]})
+
+    def _consider(self, raws: List[RawTender], st: Dict, counter: Dict) -> None:
+        """Score listings from the sweep/crawl. Known tenders always go through change detection; unknown ones are
+        stored only if they could match a category (documents of stored ones are then read, which can raise the score)."""
+        self._prefetch(raws)
+        for raw in raws:
+            key = (raw.source_key, raw.external_id)
+            if key in self.seen:
+                continue
+            counter["checked"] += 1
+            if self._known.get(key) is None:
+                r = score_tender(raw.title, raw.description or "", "", raw.procurement_type, self.models, self.embedder)
+                if r.score < self.s.sweep_keep_min_score:
+                    continue
+                counter["kept"] += 1
+            outcome = self.upsert(raw)
+            st["listings"] += 1
+            if outcome in ("new", "changed"):
+                st[outcome] += 1
+        self.db.flush()
+
+    def deep_crawl(self, src: Source) -> None:
+        """Walk the COMPLETE list of open GeM bids, a time-boxed slice per scan, resuming where the last scan stopped
+        (cursor in app_settings 'deep_crawl'). Every bid on GeM is therefore re-checked once per pass (about every
+        12-14 h), catching anything the keyword searches and the newest-first sweep could not see. If GeM starts
+        refusing requests the crawl pauses for a while, so it never endangers the regular 30-minute scans."""
+        a = self.adapter(src.key)
+        fetch = getattr(a, "fetch_inventory", None)
+        if fetch is None or self.s.deep_crawl_minutes <= 0 or src.key in self.down:
+            return
+        db, now = self.db, utcnow()
+        state = dict(cfg.get(db, "deep_crawl") or {})
+        paused = state.get("paused_until")
+        if paused and ensure_utc(datetime.fromisoformat(paused)) > now:
+            return
+        st = self.stats["sources"].setdefault(src.key, {"pages": 0, "listings": 0, "new": 0, "changed": 0,
+                                                         "status": "ok"})
+        dc = self.stats.setdefault("deep_crawl", {"pages": 0, "checked": 0, "kept": 0, "listed": 0})
+        state.setdefault("page", 1)
+        state.setdefault("pass_started", now.isoformat())
+        page = max(1, int(state["page"]) - 1)             # re-read one page: listings only ever move later
+        end = time.monotonic() + self.s.deep_crawl_minutes * 60
+        try:
+            while time.monotonic() < end and self._time_left():
+                try:
+                    raws, total = fetch(page)
+                except SourceUnavailable as e:
+                    state["paused_until"] = (utcnow() + timedelta(hours=self.s.deep_crawl_pause_hours)).isoformat()
+                    state["last_error"] = f"{fmt_ist(utcnow())}: GeM refused requests, crawl paused ({str(e)[:150]})"
+                    self.down.add(src.key)
+                    self.error("deep_crawl", f"paused: {e}", src.key)
+                    break
+                except Exception as e:
+                    state["last_error"] = f"{fmt_ist(utcnow())}: {type(e).__name__}: {str(e)[:150]}"
+                    self.error("deep_crawl", f"{type(e).__name__}: {e}", src.key, detail=f"page={page}")
+                    break
+                dc["pages"] += 1
+                if total:
+                    state["total_bids"] = total
+                if not raws:                            # walked past the end: one full pass of GeM is complete
+                    state.update(page=1, passes=int(state.get("passes", 0)) + 1, last_pass_finished=utcnow().isoformat(),
+                                 last_pass_started=state.get("pass_started"), last_pass_checked=state.get("checked", 0),
+                                 last_pass_kept=state.get("kept", 0), checked=0, kept=0,
+                                 pass_started=utcnow().isoformat())
+                    page = 1
+                    break
+                before = dict(dc)
+                dc["listed"] += len(raws)
+                self._consider(raws, st, dc)
+                state["checked"] = int(state.get("checked", 0)) + len(raws)
+                state["kept"] = int(state.get("kept", 0)) + dc["kept"] - before["kept"]
+                page += 1
+                state["page"] = page
+        finally:
+            state["updated"] = utcnow().isoformat()
+            cfg.put(db, "deep_crawl", state)
 
     def _prefetch(self, raws: List[RawTender]) -> None:
         by_source: Dict[str, List[str]] = {}
@@ -747,3 +814,64 @@ def rescore_if_rules_changed(db: Session) -> int:
                             "at": utcnow().isoformat()})
     log(logger, logging.INFO, "scoring rules changed: re-scored stored tenders", rescored=n, alerts_cancelled=cancelled)
     return n
+
+
+BID_NUMBER_RX = re.compile(r"^GEM/\d{4}/[BR]/\d{3,}$")
+
+
+def check_bid(db: Session, number: str, adapters: Optional[Dict[str, SourceAdapter]] = None) -> Dict:
+    """Look one GeM bid up live (dashboard "Check a bid"), store and score it, read its document, and say whether it
+    matches. If it matches and was NOT already in the database, that is a miss: it is recorded as a system event so
+    misses are visible and countable, and the bid is alerted like any new match."""
+    number = re.sub(r"\s+", "", (number or "")).upper()
+    if not BID_NUMBER_RX.match(number):
+        return {"ok": False, "number": number, "message": "That is not a GeM bid number (format: GEM/2026/B/1234567)."}
+    existing = db.execute(select(Tender).where(or_(Tender.bid_number == number, Tender.ra_number == number))
+                          ).scalars().first()
+    ex = ScanExecution(slot_at=utcnow(), trigger="check", status="running", started_at=utcnow(),
+                       worker_id="dashboard-check", stats={"check": number})
+    db.add(ex)
+    db.flush()
+    scan = Scan(db, ex, adapters=adapters, time_budget_s=90)
+    out: Dict = {"ok": True, "number": number, "was_stored": existing is not None}
+    try:
+        scan.load_models()
+        a = scan.adapter("gem_bidplus")
+        raw = a.lookup(number) if a else None
+        if raw is None:
+            out.update(found=False, tender_id=existing.id if existing else None,
+                       message=f"{number} was not found among GeM's public bids (open, reverse auction or cancelled).")
+            return out
+        scan._prefetch([raw])
+        scan.upsert(raw)
+        t = db.execute(select(Tender).where(Tender.source_key == raw.source_key,
+                                            Tender.external_id == raw.external_id)).scalar_one()
+        for du in ((t.details or {}).get("document_urls") or [])[:1]:
+            doc = db.execute(select(TenderDocument).where(TenderDocument.tender_id == t.id,
+                                                          TenderDocument.url == du["url"])).scalar_one_or_none()
+            if doc is None or doc.status in ("pending", "failed"):
+                scan.analyse_one(t, du["kind"], du["url"], doc)
+        threshold = int(cfg.get(db, "matching").get("threshold", 75))
+        matches = t.relevance_score >= threshold
+        if matches and existing is None:
+            db.add(SystemEvent(level="warning", event="missed_bid_found",
+                               message=f"{number} matched ({t.relevance_score}/100) but had not been found by the scans",
+                               data={"tender_id": t.id, "score": t.relevance_score}))
+        scan.notify()
+        out.update(found=True, tender_id=t.id, score=t.relevance_score, category=t.best_category, matches=matches,
+                   threshold=threshold)
+        if matches:
+            out["message"] = (f"{number}: matches {t.best_category} ({t.relevance_score}/100)."
+                              + ("" if existing else " It had NOT been found yet: logged as a miss and added now."))
+        else:
+            out["message"] = (f"{number}: scored {t.relevance_score}/100, below your alert threshold of {threshold}. "
+                              "See 'Why this score' below.")
+        return out
+    finally:
+        ex.status, ex.finished_at = "succeeded", utcnow()
+        ex.stats = {"check": number, **{k: v for k, v in out.items() if k in ("found", "score", "matches")}}
+        for a in scan.adapters.values():
+            try:
+                a.close()
+            except Exception:
+                pass
