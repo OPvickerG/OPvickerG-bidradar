@@ -182,7 +182,8 @@ def process_pending(db: Session, sender: Optional[EmailSender] = None, limit: in
     now = utcnow()
     stats = {"sent": 0, "failed": 0, "retry": 0}
     rows = db.execute(select(EmailNotification).where(EmailNotification.status == "pending")
-                      .order_by(EmailNotification.created_at).limit(limit)).scalars().all()
+                      .order_by(EmailNotification.created_at).limit(limit)
+                      .with_for_update(skip_locked=True)).scalars().all()    # two senders never take the same row
     for n in rows:
         if n.next_attempt_at and n.next_attempt_at.replace(tzinfo=n.next_attempt_at.tzinfo or now.tzinfo) > now:
             continue
