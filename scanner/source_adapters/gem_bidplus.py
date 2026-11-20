@@ -206,6 +206,16 @@ class GemBidPlusAdapter(SourceAdapter):
             return []
         return [doc_to_raw(d, "ongoing_bids") for d in resp.get("docs", [])]
 
+    def fetch_inventory(self, page: int):
+        """One page of the COMPLETE open-bid list, latest closing date first, plus the list's total size.
+        New bids enter near the front and closed bids leave from the end, so during a crawl listings only move to
+        later pages: re-reads are possible, skips are not."""
+        try:
+            resp = self._query({"sort": "Bid-End-Date-Latest"}, search="", page=page)
+        except NoResults:
+            return [], 0
+        return [doc_to_raw(d, "ongoing_bids") for d in resp.get("docs", [])], int(resp.get("numFound") or 0)
+
     def lookup(self, number: str) -> Optional[RawTender]:
         for mode in ("ongoing_bids", "bidrastatus", "cancelled_bids"):
             try:
