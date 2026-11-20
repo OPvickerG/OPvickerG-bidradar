@@ -9,7 +9,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.environ.update({
     "APP_ENV": "test", "SECURE_COOKIES": "false", "EMAIL_PROVIDER": "console", "SESSION_SECRET": "test-secret",
-    "PUBLIC_BASE_URL": "http://testserver", "SCANNER_REQUEST_DELAY": "0", "DATABASE_URL": "sqlite:///:memory:",
+    "PUBLIC_BASE_URL": "http://testserver", "SCANNER_REQUEST_DELAY": "0", "SCANNER_SWEEP_PAGES": "0", "DATABASE_URL": "sqlite:///:memory:",
 })
 
 import pytest  # noqa: E402
