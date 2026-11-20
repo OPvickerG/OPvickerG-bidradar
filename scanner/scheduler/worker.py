@@ -26,7 +26,7 @@ from typing import Dict, Optional
 
 from core.config import get_settings
 from core.logs import log, setup_logging
-from core.timeutil import fmt_ist, next_slot, utcnow
+from core.timeutil import fmt_ist, next_slot, slot_for, utcnow
 
 logger = logging.getLogger("bidradar.worker")
 STATE: Dict = {"started": None, "last_run": None, "last_status": None, "next_slot": None}
@@ -89,8 +89,17 @@ def start_in_background(keepalive_url: Optional[str] = None) -> None:
 
 def run_forever() -> None:
     interval = get_settings().scan_interval_minutes
+    last = slot_for(utcnow(), interval)
     run_slot()                                   # catch up the current slot if it has not run yet
     while not _stop.is_set():
+        current = slot_for(utcnow(), interval)
+        if current > last:
+            # a long run (start-up re-score, slow scan) crossed a slot boundary: run that slot now
+            last = current
+            res = run_slot(scheduled_minute=current.minute)
+            log(logger, logging.INFO, "slot finished (late start)", slot_ist=fmt_ist(current),
+                status=(res or {}).get("status", "crashed"))
+            continue
         target = next_slot(utcnow(), interval)
         STATE["next_slot"] = fmt_ist(target)
         log(logger, logging.INFO, "waiting for next slot", next_slot_ist=fmt_ist(target))
@@ -99,6 +108,7 @@ def run_forever() -> None:
         if _stop.is_set():
             break
         time.sleep(2)                            # land safely inside the new slot
+        last = target
         res = run_slot(scheduled_minute=target.minute)
         log(logger, logging.INFO, "slot finished", slot_ist=fmt_ist(target),
             status=(res or {}).get("status", "crashed"))
