@@ -37,6 +37,7 @@ class MockGem:
         self.results: Dict[str, str] = {}
         self.pdfs: Dict[str, bytes] = {}
         self.fail_listing = False
+        self.page_size = None
         self.calls: List[str] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -58,10 +59,15 @@ class MockGem:
             else:
                 words = search.split()
                 hits = [d for d in pool if all(w in d["bbt_title"][0].lower() for w in words)]
-            if payload["page"] > 1 or not hits:
+            if self.page_size:                       # optional paging (deep-crawl tests)
+                p = payload["page"]
+                chunk = hits[(p - 1) * self.page_size: p * self.page_size]
+            else:
+                chunk = hits if payload["page"] == 1 else []
+            if not chunk:
                 return httpx.Response(404, text="")
             return httpx.Response(200, json={"code": 200, "response": {"response": {"numFound": len(hits),
-                                                                                  "docs": json.loads(json.dumps(hits))}}})
+                                                                                  "docs": json.loads(json.dumps(chunk))}}})
         if path.startswith("/public-bid-other-details/"):
             b = path.rsplit("/", 1)[1]
             return httpx.Response(200, json={"response": {"corrigendum": b in self.corrigenda, "representation": False}})
