@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from urllib.parse import urlencode
 
@@ -400,7 +400,17 @@ def monitoring(request: Request, db: Session = Depends(get_db), user: str = Depe
     mail_counts = dict(db.execute(select(EmailNotification.status, func.count()).group_by(EmailNotification.status)).all())
     suppressed = db.scalar(select(func.count()).select_from(SuppressedNotification))
     return render(request, "monitoring.html", db, scans=scans, errors=errors, sysev=sysev, sources=sources,
-                  mail=mail, mail_counts=mail_counts, suppressed=suppressed, st=status_snapshot(db))
+                  mail=mail, mail_counts=mail_counts, suppressed=suppressed, st=status_snapshot(db),
+                  helper=_helper_status(db))
+
+
+def _helper_status(db: Session) -> dict:
+    h = cfg.get(db, "helper") or {}
+    seen = h.get("last_seen")
+    if not seen:
+        return {"configured": False}
+    last = ensure_utc(datetime.fromisoformat(seen))
+    return {"configured": True, "last_seen": last, "online": (utcnow() - last).total_seconds() < 180}
 
 
 @app.post("/monitoring/scan-now")
