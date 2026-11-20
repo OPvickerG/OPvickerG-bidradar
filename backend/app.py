@@ -401,7 +401,23 @@ def monitoring(request: Request, db: Session = Depends(get_db), user: str = Depe
     suppressed = db.scalar(select(func.count()).select_from(SuppressedNotification))
     return render(request, "monitoring.html", db, scans=scans, errors=errors, sysev=sysev, sources=sources,
                   mail=mail, mail_counts=mail_counts, suppressed=suppressed, st=status_snapshot(db),
-                  helper=_helper_status(db))
+                  helper=_helper_status(db), crawl=_crawl_status(db),
+                  misses=db.scalar(select(func.count()).select_from(SystemEvent)
+                                   .where(SystemEvent.event == "missed_bid_found")))
+
+
+def _crawl_status(db: Session) -> dict:
+    c = dict(cfg.get(db, "deep_crawl") or {})
+    total = int(c.get("total_bids") or 0)
+    pages = max(1, -(-total // 10)) if total else None
+    page = int(c.get("page") or 1)
+    c["pages_total"] = pages
+    c["pct"] = min(100, round(100 * (page - 1) / pages)) if pages else 0
+    for k in ("last_pass_finished", "updated", "paused_until", "pass_started"):
+        if c.get(k):
+            c[k] = ensure_utc(datetime.fromisoformat(c[k]))
+    c["paused"] = bool(c.get("paused_until") and c["paused_until"] > utcnow())
+    return c
 
 
 def _helper_status(db: Session) -> dict:
@@ -411,6 +427,24 @@ def _helper_status(db: Session) -> dict:
         return {"configured": False}
     last = ensure_utc(datetime.fromisoformat(seen))
     return {"configured": True, "last_seen": last, "online": (utcnow() - last).total_seconds() < 180}
+
+
+@app.post("/check-bid")
+def check_bid_route(request: Request, bid: str = Form(""), csrf: str = Form(""), db: Session = Depends(get_db),
+                    user: str = Depends(require_user)):
+    """Look any GeM bid number up live: stores, scores and reads it, and logs it as a miss if it matched but the
+    scans had not found it."""
+    auth.check_csrf(request, csrf)
+    from scanner.discovery.pipeline import check_bid
+    try:
+        res = check_bid(db, bid)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        flash(request, f"Could not check that bid right now ({type(e).__name__}). GeM may be slow; try again.", "err")
+        return back("/tenders")
+    flash(request, res["message"], "ok" if res.get("found") else "warn")
+    return back(f"/tenders/{res['tender_id']}" if res.get("tender_id") else "/tenders")
 
 
 @app.post("/monitoring/scan-now")
