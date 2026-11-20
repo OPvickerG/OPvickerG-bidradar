@@ -14,6 +14,7 @@ import logging
 import os
 import socket
 import sys
+import threading
 import traceback
 import uuid
 from datetime import timedelta
@@ -37,8 +38,13 @@ logger = logging.getLogger("bidradar.scheduler")
 MAX_MISSED_BACKFILL = 48          # never create more than a day of 'missed' rows in one go
 
 
+class _LostLock(Exception):
+    pass
+
+
 def worker_id() -> str:
-    return f"{os.environ.get('CLOUD_RUN_EXECUTION') or socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
+    name = os.environ.get("WORKER_NAME") or os.environ.get("CLOUD_RUN_EXECUTION") or socket.gethostname()
+    return f"{name}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
 
 
 def record_missed(db: Session, slot) -> int:
@@ -64,11 +70,18 @@ def record_missed(db: Session, slot) -> int:
     return len(gaps)
 
 
-def _claim_execution(db: Session, slot, trigger: str, wid: str) -> Optional[ScanExecution]:
+def _claim_execution(db: Session, slot, trigger: str, wid: str, holding_lock: bool = False) -> Optional[ScanExecution]:
     ex = db.execute(select(ScanExecution).where(ScanExecution.slot_at == slot, ScanExecution.trigger == trigger)
                     ).scalar_one_or_none()
     if ex is not None:
-        if ex.status in ("failed", "skipped_locked") or (trigger == "manual"):
+        # We hold the lock, so a slot still marked 'running' belongs to a worker that went silent (a laptop that
+        # slept mid-scan, a restarted container). Its lease has run out: take the slot over and finish it.
+        abandoned = holding_lock and ex.status == "running" and ex.worker_id != wid
+        if abandoned:
+            db.add(SystemEvent(level="warning", event="scan_taken_over",
+                               message=f"slot {fmt_ist(slot)} abandoned by {ex.worker_id}; re-run by {wid}",
+                               data={"scan_id": ex.id}))
+        if abandoned or ex.status in ("failed", "skipped_locked") or (trigger == "manual"):
             ex.status, ex.started_at, ex.finished_at, ex.error, ex.worker_id, ex.stats = "running", utcnow(), None, None, wid, {}
             db.flush()
             return ex
@@ -117,7 +130,7 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
             from scanner.discovery.pipeline import rescore_if_rules_changed
             rescore_if_rules_changed(db)   # no-op unless the matching rules changed since the last scan
             missed = record_missed(db, slot) if trigger == "scheduler" else 0
-            ex = _claim_execution(db, slot, trigger, wid)
+            ex = _claim_execution(db, slot, trigger, wid, holding_lock=True)
             if ex is None:
                 db.commit()
                 lock.release(db, wid)
@@ -140,11 +153,29 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
             raise
 
     status, err, stats = "failed", None, {}
+    lost, done = threading.Event(), threading.Event()
+
+    def renew_lease():                 # keep the lease short but alive while this scan is genuinely running
+        while not done.wait(60):
+            try:
+                with session_scope() as hb:
+                    if not lock.heartbeat(hb, wid, s.scan_lease_minutes):
+                        lost.set()
+                        return
+            except Exception as e:
+                log(logger, logging.WARNING, "lease renewal failed", error=str(e)[:200])
+
+    threading.Thread(target=renew_lease, daemon=True, name="lease").start()
     try:
         with session_scope() as db:
             ex = db.get(ScanExecution, ex_id)
             scan = Scan(db, ex, adapters=adapters, sender=sender, catch_up=missed > 0, time_budget_s=time_budget_s)
+            scan.should_stop = lost.is_set
             stats = scan.run()
+            if lost.is_set():          # another worker owns this slot now: keep saved tenders, leave its row alone
+                db.commit()
+                status, err = "lost_lock", "lease expired during the scan (machine paused?); another worker took over"
+                raise _LostLock()
             stats["missed_slots_recovered"] = missed
             srcs = stats.get("sources", {})
             failed_sources = [k for k, v in srcs.items() if v.get("status") == "failed"]
@@ -159,6 +190,8 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
                 err = "no source could be scanned: " + ", ".join(failed_sources)
             ex.status, ex.finished_at, ex.stats, ex.error = status, utcnow(), stats, err
             db.commit()
+    except _LostLock:
+        log(logger, logging.WARNING, "scan stopped: lock lost", scan_id=ex_id)
     except Exception as e:
         err = f"{type(e).__name__}: {e}"
         log(logger, logging.ERROR, "scan crashed", error=err, trace=traceback.format_exc()[-2000:])
@@ -169,6 +202,7 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
             db.add(SystemEvent(level="error", event="scan_failed", message=err[:500], data={"scan_id": ex_id}))
             db.commit()
     finally:
+        done.set()
         with session_scope() as db:
             lock.release(db, wid)
     result.update(status=status, error=err, stats=stats, scan_id=ex_id)
