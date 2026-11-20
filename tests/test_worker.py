@@ -61,3 +61,25 @@ def test_health_endpoint(monkeypatch):
     time.sleep(0.2)
     body = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read())
     assert body["status"] == "ok" and body["last_status"] == "succeeded"
+
+
+def test_slot_crossed_during_a_long_run_is_run_immediately(monkeypatch):
+    """Start-up work that runs past :00/:30 must not skip that slot (seen live on 20 Nov 2026)."""
+    import scanner.scheduler.run as runmod
+    calls = []
+    base = datetime(2026, 11, 20, 8, 20, tzinfo=timezone.utc)          # 13:50 IST
+    clock = {"now": base}
+
+    def fake_run_once(trigger, scheduled_minute=None):
+        calls.append(scheduled_minute)
+        if len(calls) == 1:
+            clock["now"] = base + timedelta(minutes=12)                # start-up run ends at 14:02 IST
+        else:
+            worker._stop.set()
+        return {"status": "succeeded"}
+    monkeypatch.setattr(runmod, "run_once", fake_run_once)
+    monkeypatch.setattr(worker, "utcnow", lambda: clock["now"])
+    worker._stop.clear()
+    worker.run_forever()
+    worker._stop.clear()
+    assert calls == [None, 30]          # the 08:30 UTC (= 14:00 IST) slot ran right away, not 30 min later
