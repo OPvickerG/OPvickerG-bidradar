@@ -118,3 +118,68 @@ def test_helper_heartbeat_makes_it_alive(db_url):
     worker.helper_heartbeat()
     assert worker.helper_alive() is True
     assert worker.helper_alive(utcnow() + timedelta(minutes=5)) is False
+
+
+# --- full-GeM deep crawl and "Check a bid" ----------------------------------------------------------------------
+def test_deep_crawl_walks_every_page_of_gem_and_completes_a_pass(gem, run_scan, monkeypatch):
+    monkeypatch.setenv("DEEP_CRAWL_MINUTES", "2")
+    reset_settings()
+    gem.page_size = 2
+    gem.docs = [gem_doc(7200001, "Supply of A4 paper"), gem_doc(7200002, "Office chair"),
+                gem_doc(7200003, "Custom Bid for Services - Repair of vehicles"),
+                gem_doc(7200004, "Laptop Notebook"), gem_doc(7200005, "Annual maintenance of lifts")]
+    gem.pdfs["7200003"] = gem_bid_pdf("GEM/2026/B/7200003")
+    res = run_scan({"gem_bidplus": gem.adapter()})
+    dc = res["stats"]["deep_crawl"]
+    assert dc["listed"] >= 5 and dc["pages"] >= 3                     # every page read, end of list reached
+    with session_scope() as db:
+        st = cfg.get(db, "deep_crawl")
+        assert st["passes"] == 1 and st["page"] == 1 and st["last_pass_checked"] >= 5 and st["total_bids"] == 5
+        titles = [t.title for t in db.execute(select(Tender)).scalars()]
+    assert any("Repair of vehicles" in t for t in titles)
+    assert not any(x in t for t in titles for x in ("A4 paper", "Office chair", "Laptop"))
+
+
+def test_deep_crawl_pauses_when_gem_refuses_and_keeps_its_place(gem, run_scan, monkeypatch):
+    from scanner.source_adapters.base import SourceUnavailable
+    monkeypatch.setenv("DEEP_CRAWL_MINUTES", "2")
+    reset_settings()
+    with session_scope() as db:
+        cfg.put(db, "deep_crawl", {"page": 40, "total_bids": 45000})
+    a = gem.adapter()
+
+    def refuse(page):
+        raise SourceUnavailable("connection refused")
+    a.fetch_inventory = refuse
+    gem.docs = []
+    run_scan({"gem_bidplus": a})
+    with session_scope() as db:
+        st = cfg.get(db, "deep_crawl")
+        assert st["page"] == 40 and st.get("paused_until") and "refused" in st["last_error"]
+    calls = []
+    a2 = gem.adapter()
+    a2.fetch_inventory = lambda page: calls.append(page) or ([], 0)
+    run_scan({"gem_bidplus": a2})
+    assert calls == []                                                 # still paused: GeM is left alone
+
+
+def test_check_a_bid_finds_stores_and_logs_a_miss(gem, db_url):
+    from scanner.discovery.pipeline import check_bid
+    from database.seed.loader import seed
+    gem.docs = [gem_doc(7300001, "Custom Bid for Services - Repair of vehicles"),
+                gem_doc(7300002, "Supply of A4 paper")]
+    gem.pdfs["7300001"] = gem_bid_pdf("GEM/2026/B/7300001")
+    with session_scope() as db:
+        seed(db)
+        r = check_bid(db, " gem/2026/b/7300001 ", adapters={"gem_bidplus": gem.adapter()})
+    assert r["found"] and r["matches"] and not r["was_stored"] and "NOT been found" in r["message"]
+    with session_scope() as db:
+        assert db.get(Tender, r["tender_id"]).bid_number == "GEM/2026/B/7300001"
+        assert db.execute(select(SystemEvent).where(SystemEvent.event == "missed_bid_found")).scalar_one()
+        r2 = check_bid(db, "GEM/2026/B/7300001", adapters={"gem_bidplus": gem.adapter()})
+    assert r2["was_stored"] and "NOT" not in r2["message"]                # already known: not a miss
+    with session_scope() as db:
+        low = check_bid(db, "GEM/2026/B/7300002", adapters={"gem_bidplus": gem.adapter()})
+        assert low["found"] and not low["matches"] and "below your alert threshold" in low["message"]
+        assert check_bid(db, "GEM/2026/B/9999999", adapters={"gem_bidplus": gem.adapter()})["found"] is False
+        assert check_bid(db, "hello", adapters={"gem_bidplus": gem.adapter()})["ok"] is False
