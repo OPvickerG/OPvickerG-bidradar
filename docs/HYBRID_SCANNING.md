@@ -22,3 +22,14 @@ Remove it: `bash scripts/mac/uninstall_helper.sh`.
 Log: `~/Library/Logs/bidradar-helper.log`.
 
 Keep the Mac's copy of the code the same as GitHub's. The matching rules are fingerprinted, and two different versions would keep re-scoring each other's results.
+
+## Full GeM crawl (nothing open is left unchecked)
+After its regular work, each scan spends `DEEP_CRAWL_MINUTES` (default 8) walking the complete list of open GeM bids. There are about 45,000, so about 4,500 pages. It saves its place in app_settings `deep_crawl`, so the next scan picks up where this one stopped. One full pass takes roughly 12–14 hours, so every open bid is re-checked about twice a day.
+- **No skips.** The list is read latest-closing-first: new bids enter near the front and closed bids leave from the end, so listings only ever move to later pages. Each slice also re-reads one page of overlap. A bid can be read twice in a pass, never skipped.
+- **Back-off.** If GeM refuses connections, the crawl pauses for `DEEP_CRAWL_PAUSE_HOURS` (2) and the regular scans carry on.
+- **What's stored.** Every bid is scored. Bids scoring 40 or more are stored and their documents read, which can raise the score. Bids already stored go through change detection.
+- **Progress.** Monitoring shows how far the current pass has got, when the last full pass finished, and how many bids it checked.
+
+## "Check a bid" (top of every page)
+Paste any GeM bid or RA number. The app looks it up live on GeM, stores it, reads its main document, scores it, and opens it with the explanation.
+- If it matches and the scans had not found it, it is logged as a miss: a `missed_bid_found` event, counted on Monitoring. It is then alerted like any new match.
