@@ -8,5 +8,5 @@ DATABASE_URL="$(security find-generic-password -a bidradar -s bidradar-database-
 export DATABASE_URL
 export PYTHONPATH=. APP_ENV=production SCAN_ROLE=helper SEND_EMAIL=false WORKER_NAME=mac-helper \
        PUBLIC_BASE_URL=https://bidradar.onvoroa.com EMAIL_PROVIDER=console \
-       SCAN_LEASE_MINUTES=5 SCANNER_MAX_PAGES_PER_TERM=4 SCANNER_SWEEP_PAGES=20 SCANNER_REQUEST_DELAY=2
+       SCAN_LEASE_MINUTES=5 SCANNER_MAX_PAGES_PER_TERM=4 SCANNER_SWEEP_PAGES=20 SCANNER_REQUEST_DELAY=3
 exec .venv/bin/python -m scanner.scheduler.worker
