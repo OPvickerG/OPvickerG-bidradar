@@ -22,8 +22,10 @@ fi
 if security find-generic-password -a bidradar -s bidradar-database-url >/dev/null 2>&1 && [ "${1:-}" != "--new-url" ]; then
   echo "Database address already saved in Keychain (use --new-url to replace it)."
 else
-  echo "Paste the Neon DATABASE_URL (the same one you pasted into Voroa). Nothing will show while you paste:"
-  IFS= read -rs URL; echo
+  echo "Paste the Neon DATABASE_URL (the same one you pasted into Voroa), then press Enter:"
+  IFS= read -r URL
+  URL="$(printf '%s' "$URL" | tr -d '[:space:]')"
+  echo "Got it (${#URL} characters)."
   case "$URL" in postgres://*|postgresql://*) ;; *) echo "That does not look like a postgres:// address. Nothing saved."; exit 1 ;; esac
   security add-generic-password -U -a bidradar -s bidradar-database-url -w "$URL"
   unset URL
