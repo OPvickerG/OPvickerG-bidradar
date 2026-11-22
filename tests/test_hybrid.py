@@ -201,3 +201,26 @@ def test_long_scan_keeps_its_database_transaction_alive(gem, run_scan, monkeypat
     gem.pdfs["7400001"] = gem_bid_pdf("GEM/2026/B/7400001")
     res = run_scan({"gem_bidplus": gem.adapter()})
     assert res["status"] in ("succeeded", "partial") and pings and all(pings)
+
+
+def test_helper_that_cannot_reach_gem_leaves_the_slot_to_the_server(gem, run_scan, monkeypatch):
+    from scanner.scheduler.run import run_once
+    from scanner.source_adapters.base import SourceUnavailable
+    gem.docs = []
+    a = gem.adapter()
+
+    def down(*args, **kw):
+        raise SourceUnavailable("[Errno 60] Operation timed out")
+    a.fetch_page = down
+    a.fetch_latest = down
+    monkeypatch.setenv("SCAN_ROLE", "helper")
+    monkeypatch.setenv("SEND_EMAIL", "false")
+    reset_settings()
+    res = run_once("scheduler", adapters={"gem_bidplus": a}, time_budget_s=60)
+    assert res["status"] == "failed"
+    monkeypatch.setenv("SCAN_ROLE", "server")
+    reset_settings()
+    res2 = run_once("scheduler", adapters={"gem_bidplus": gem.adapter()}, time_budget_s=60)
+    assert res2["status"] == "succeeded"                       # the server re-ran the same slot
+    with session_scope() as db:
+        assert len(db.execute(select(ScanExecution)).scalars().all()) == 1
