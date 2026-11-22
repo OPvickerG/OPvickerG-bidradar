@@ -190,6 +190,11 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
                 status = "succeeded"
             if status == "failed":
                 err = "no source could be scanned: " + ", ".join(failed_sources)
+            elif failed_sources and s.scan_role == "helper":
+                # the helper machine could not reach a portal (seen 22 Nov 2026: GeM timed out from the Mac): mark
+                # the slot failed so the always-on server, which retries failed slots, scans it in full
+                status = "failed"
+                err = "helper could not reach " + ", ".join(failed_sources) + "; the server will scan this slot"
             ex.status, ex.finished_at, ex.stats, ex.error = status, utcnow(), stats, err
             db.commit()
     except _LostLock:
