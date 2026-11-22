@@ -27,6 +27,7 @@ from notifications.notification_queue import queue as nq
 from scanner.bid_analysis.gem_document import eligibility_summary, parse_gem_bid_text, requirements_summary
 from scanner.bid_analysis.issues import missing_information, potential_issues
 from scanner.bid_analysis.relevance import score_tender
+from scanner.bid_analysis.location import locate
 from scanner.bid_analysis.summary import clean_place, summarize
 from scanner.change_detection.detector import (EVENT_TO_PREF, Change, diff_corrigenda, diff_eligibility,
                                                diff_listing, diff_outcome, state_fingerprint)
@@ -55,6 +56,7 @@ class Scan:
         self.max_pages = self.s.backfill_pages_per_term if catch_up else self.s.max_pages_per_term
         self.deadline = time.monotonic() + (time_budget_s or self.s.scan_time_budget_minutes * 60)
         self.should_stop: Callable[[], bool] = lambda: False    # set by the runner if this worker lost its lock
+        self.home = (cfg.get(db, "geography") or {}).get("home")   # user's home place (distance filter), or None
         self.stats: Dict = {"sources": {}, "listings_seen": 0, "new_tenders": 0, "updated_tenders": 0,
                             "relevant_new": 0, "documents_analysed": 0, "refreshed": 0, "events": 0,
                             "notifications_queued": 0, "errors": 0, "requests": 0}
@@ -462,6 +464,7 @@ class Scan:
         d["missing"] = missing_information({"estimated_value": t.estimated_value, "emd": t.emd or (f.get("emd_required") == "No"),
                                             "contract_duration": t.contract_duration, "location": t.location or t.state})
         t.details = d
+        set_location(t, getattr(self, "home", None))
         d = dict(t.details)
         d["summary"] = summarize(t)
         t.details = d
@@ -766,6 +769,7 @@ def rescore_all(db: Session, only_active: bool = False) -> int:
         m.enabled = m.enabled and m.code in enabled
     dummy = Scan.__new__(Scan)
     dummy.db, dummy.models, dummy.embedder = db, models, None
+    dummy.home = (cfg.get(db, "geography") or {}).get("home")
     q = select(Tender)
     if only_active:
         q = q.where(Tender.status == "active")
@@ -875,3 +879,44 @@ def check_bid(db: Session, number: str, adapters: Optional[Dict[str, SourceAdapt
                 a.close()
             except Exception:
                 pass
+
+
+GEO_VERSION = "3"
+
+
+def set_location(t: Tender, home: Optional[Dict]) -> None:
+    """Work out where the tender's work/delivery is and how far that is from home (details['geo']).
+    Also fills the state / place shown elsewhere when the listing did not give one."""
+    g = locate(t, home)
+    d = dict(t.details or {})
+    d["geo"] = g
+    t.details = d
+    if not t.state and g.get("state"):
+        t.state = g["state"]
+    if g.get("place") and not clean_place(t.location):
+        t.location = g["place"] + (f", {g['state']}" if g.get("state") and g["state"] not in g["place"] else "")
+
+
+def relocate_all(db: Session) -> int:
+    """Recompute location/distance for open tenders from what is already stored (no downloads)."""
+    home = (cfg.get(db, "geography") or {}).get("home")
+    n = 0
+    for t in db.execute(select(Tender).where(Tender.status == "active")).scalars():
+        set_location(t, home)
+        d = dict(t.details or {})
+        d["summary"] = summarize(t)
+        t.details = d
+        n += 1
+    db.flush()
+    return n
+
+
+def relocate_if_changed(db: Session) -> int:
+    """Run relocate_all once whenever the location rules or the home place change."""
+    home = (cfg.get(db, "geography") or {}).get("home") or {}
+    key = f"{GEO_VERSION}:{home.get('lat')}:{home.get('lon')}:{home.get('radius_km')}"
+    if (cfg.get(db, "geo_version") or {}).get("key") == key:
+        return 0
+    n = relocate_all(db)
+    cfg.put(db, "geo_version", {"key": key, "updated": utcnow().isoformat(), "tenders": n})
+    return n
