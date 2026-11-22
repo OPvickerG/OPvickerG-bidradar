@@ -134,3 +134,29 @@ def test_structured_json_logs_redact_secrets(capsys):
     if line:            # handler may write to stdout or stderr depending on configuration
         rec = json.loads(line[0])
         assert rec["scan_id"] == 7 and "sk-should-not-appear" not in line[0]
+
+
+def test_home_town_setting_area_filter_and_nearest_sort(client):
+    from database.session import session_scope
+    from database.schema.models import Tender
+    login(client)
+    with session_scope() as db:
+        db.add(Tender(source_key="gem_bidplus", external_id="N1", title="Repair of vehicles near", status="active",
+                      relevance_score=90, best_category="F", details={"doc_fields": {"consignee_pins": ["160017"]}}))
+        db.add(Tender(source_key="gem_bidplus", external_id="F1", title="Repair of vehicles far", status="active",
+                      relevance_score=90, best_category="F", details={"doc_fields": {"consignee_pins": ["600001"]}}))
+        db.add(Tender(source_key="gem_bidplus", external_id="U1", title="Repair of vehicles somewhere", status="active",
+                      relevance_score=90, best_category="F", details={}))
+    r = client.post("/settings/geography", data={"home": "karnal", "radius_km": "200", "csrf": csrf(client, "/settings")},
+                    follow_redirects=True)
+    assert "within 200 km of Karnal" in r.text and "3 open tenders re-measured" in r.text
+    page = client.get("/tenders").text
+    assert "vehicles near" in page and "vehicles somewhere" in page and "vehicles far" not in page
+    assert "Chandigarh" in page and "km" in page
+    assert "vehicles far" in client.get("/tenders?near=all").text
+    only = client.get("/tenders?near=yes").text
+    assert "vehicles near" in only and "vehicles somewhere" not in only
+    assert client.get("/tenders?near=all&sort=nearest").status_code == 200
+    bad = client.post("/settings/geography", data={"home": "Atlantis", "csrf": csrf(client, "/settings")},
+                      follow_redirects=True)
+    assert "not in the built-in list" in bad.text
