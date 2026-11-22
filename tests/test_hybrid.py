@@ -183,3 +183,21 @@ def test_check_a_bid_finds_stores_and_logs_a_miss(gem, db_url):
         assert low["found"] and not low["matches"] and "below your alert threshold" in low["message"]
         assert check_bid(db, "GEM/2026/B/9999999", adapters={"gem_bidplus": gem.adapter()})["found"] is False
         assert check_bid(db, "hello", adapters={"gem_bidplus": gem.adapter()})["ok"] is False
+
+
+def test_long_scan_keeps_its_database_transaction_alive(gem, run_scan, monkeypatch):
+    """Neon closes a transaction idle for 5 min; the scan must ping between slow GeM requests."""
+    from scanner.discovery import pipeline
+    pings = []
+    real = pipeline.Scan._keepalive
+
+    def spy(self):
+        self._last_ping = -10**9                       # pretend a minute has passed every time
+        before = self._last_ping
+        real(self)
+        pings.append(self._last_ping != before)
+    monkeypatch.setattr(pipeline.Scan, "_keepalive", spy)
+    gem.docs = [gem_doc(7400001, "Custom Bid for Services - Repair of vehicles")]
+    gem.pdfs["7400001"] = gem_bid_pdf("GEM/2026/B/7400001")
+    res = run_scan({"gem_bidplus": gem.adapter()})
+    assert res["status"] in ("succeeded", "partial") and pings and all(pings)
