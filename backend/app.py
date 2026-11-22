@@ -98,7 +98,8 @@ def _score_cls(score: int) -> str:
     return {"very strong": "s-vh", "strong": "s-h", "potentially relevant": "s-m", "weak": "s-l"}.get(band(score or 0), "s-x")
 
 
-templates.env.filters.update(ist=fmt_ist, money=_money, until=_until, score_cls=_score_cls, band=band)
+from scanner.bid_analysis.location import geo_label  # noqa: E402
+templates.env.filters.update(ist=fmt_ist, money=_money, until=_until, score_cls=_score_cls, band=band, geolabel=geo_label)
 templates.env.globals.update(CATEGORY_NAMES=CATEGORY_NAMES, app_name=S.app_name)
 
 
@@ -316,7 +317,8 @@ def overview(request: Request, db: Session = Depends(get_db), user: str = Depend
 # --------------------------------------------------------------------------- tender explorer
 SORTS = {"score": (Tender.relevance_score.desc(), Tender.deadline_at), "deadline": (Tender.deadline_at.asc(),),
          "published": (Tender.published_at.desc(),), "first_seen": (Tender.first_seen_at.desc(),),
-         "value": (Tender.estimated_value.desc(),)}
+         "value": (Tender.estimated_value.desc(),),
+         "nearest": (Tender.details["geo"]["km"].as_float().asc().nulls_last(), Tender.relevance_score.desc())}
 
 
 def tender_query(db: Session, f: Dict):
@@ -342,15 +344,24 @@ def tender_query(db: Session, f: Dict):
         q = q.where(Tender.watched.is_(True))
     if f.get("min_value"):
         q = q.where(Tender.estimated_value >= float(f["min_value"]))
+    near = Tender.details["geo"]["near"].as_string()
+    if f.get("near") == "home":            # near home, plus anything whose location is not stated (never hidden)
+        q = q.where(or_(near.is_(None), near != "no"))
+    elif f.get("near") == "yes":
+        q = q.where(near == "yes")
     return q
 
 
 @app.get("/tenders", response_class=HTMLResponse)
 def tenders(request: Request, q: str = "", category: str = "", min_score: str = "50", status: str = "active",
             state: str = "", source: str = "", closing_days: str = "", watched: str = "", min_value: str = "",
-            sort: str = "score", page: int = 1, db: Session = Depends(get_db), user: str = Depends(require_user)):
+            near: str = "", sort: str = "score", page: int = 1, db: Session = Depends(get_db),
+            user: str = Depends(require_user)):
+    home = (cfg.get(db, "geography") or {}).get("home")
+    if near not in ("home", "yes", "all"):
+        near = "home" if home else "all"
     f = dict(q=q, category=category, min_score=min_score, status=status, state=state, source=source,
-             closing_days=closing_days, watched=watched, min_value=min_value)
+             closing_days=closing_days, watched=watched, min_value=min_value, near=near)
     base = tender_query(db, f)
     total = db.scalar(select(func.count()).select_from(base.subquery()))
     per = 25
@@ -360,7 +371,7 @@ def tenders(request: Request, q: str = "", category: str = "", min_score: str = 
     sources = db.execute(select(Source).order_by(Source.id)).scalars().all()
     qs = {k: v for k, v in dict(f, sort=sort).items() if v}
     return render(request, "tenders.html", db, rows=rows, total=total, page=page, pages=max(1, -(-total // per)),
-                  f=f, sort=sort, states=states, sources=sources, qs=qs, urlencode=urlencode)
+                  f=f, sort=sort, states=states, sources=sources, qs=qs, urlencode=urlencode, home=home)
 
 
 @app.get("/tenders/{tid}", response_class=HTMLResponse)
@@ -374,7 +385,8 @@ def tender_detail(tid: int, request: Request, db: Session = Depends(get_db), use
     src = db.execute(select(Source).where(Source.key == t.source_key)).scalar_one_or_none()
     matches = sorted(t.matches, key=lambda m: -m.score)
     return render(request, "tender_detail.html", db, t=t, d=t.details or {}, events=events, obs=obs, notes=notes,
-                  src=src, matches=matches, links=nq.tender_links(t, S.public_base_url), threshold=threshold(db))
+                  src=src, matches=matches, links=nq.tender_links(t, S.public_base_url), threshold=threshold(db),
+                  home=(cfg.get(db, "geography") or {}).get("home"))
 
 
 @app.post("/tenders/{tid}/watch")
@@ -668,8 +680,25 @@ async def set_geography(request: Request, db: Session = Depends(get_db), user: s
     from core.geo import STATES
     states = [s for s in form.getlist("states") if s in STATES]
     pins = [p.strip() for p in str(form.get("pin_prefixes", "")).replace(";", ",").split(",") if p.strip().isdigit() and 1 <= len(p.strip()) <= 6]
-    cfg.put(db, "geography", {"states": states, "pin_prefixes": pins})
-    flash(request, "Geographic filter saved: " + (", ".join(states + pins) if (states or pins) else "all of India") + ".")
+    geo = {"states": states, "pin_prefixes": pins, "home": None}
+    home_name = str(form.get("home", "")).strip()
+    if home_name:
+        from core.places import resolve_home
+        hit = resolve_home(home_name)
+        if not hit:
+            flash(request, f"'{home_name}' is not in the built-in list of places. Try the nearest district town.", "err")
+            return back("/settings#geography")
+        try:
+            radius = max(10, min(3000, int(form.get("radius_km") or 250)))
+        except ValueError:
+            radius = 250
+        geo["home"] = {"name": home_name.title(), "lat": hit[1], "lon": hit[2], "state": hit[3], "radius_km": radius}
+    cfg.put(db, "geography", geo)
+    from scanner.discovery.pipeline import relocate_if_changed
+    n = relocate_if_changed(db)
+    where = f"within {geo['home']['radius_km']} km of {geo['home']['name']}" if geo["home"] else "all of India"
+    flash(request, f"Location filter saved: {where}" + (f" + {', '.join(states + pins)}" if (states or pins) else "")
+          + f". {n} open tenders re-measured.")
     return back("/settings#geography")
 
 
