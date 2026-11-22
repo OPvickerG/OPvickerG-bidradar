@@ -68,6 +68,11 @@ def render_tender_email(db: Session, t: Tender, event_type: str, change_summary:
         requirements=d.get("requirements") or [], eligibility=d.get("eligibility") or [], issues=d.get("issues") or [],
         links=tender_links(t, s.public_base_url), verified=fmt_ist(t.last_verified_at or t.last_seen_at, True),
         badge_bg="#15803d" if t.relevance_score >= 90 else "#1d4ed8" if t.relevance_score >= 75 else "#b45309")
+    g = d.get("geo")
+    if g and (g.get("place") or g.get("state")):
+        home = (cfg.get(db, "geography") or {}).get("home") or {}
+        from scanner.bid_analysis.location import geo_label
+        ctx["location"] = geo_label(g, home.get("name")) + (f" (from {g['basis']})" if g.get("basis") else "")
     ctx["facts"] = [("Tender ID", (t.bid_number or t.external_id) + (f" · RA {t.ra_number}" if t.ra_number else "")),
                     ("Organization", ctx["org"]), ("Location", ctx["location"]), ("Published", ctx["published"]),
                     ("Submission deadline", ctx["deadline"]), ("Estimated value", ctx["est_value"]),
@@ -128,8 +133,13 @@ def tender_qualifies(db: Session, t: Tender) -> bool:
         return False
     if t.best_category and t.best_category not in (m.get("enabled_categories") or []):
         return False
+    g = (t.details or {}).get("geo") or {}
+    if geo.get("home") and g.get("near") == "no":
+        return False                  # known to be outside the home radius (unknown location still alerts)
     pins = (t.details or {}).get("pins") or []
-    return matches_geography(t.state, pins, geo.get("states"), geo.get("pin_prefixes"))
+    if (geo.get("states") or geo.get("pin_prefixes")) and (t.state or pins):
+        return matches_geography(t.state, pins, geo.get("states"), geo.get("pin_prefixes"))
+    return True
 
 
 def notify_new_tender(db: Session, t: Tender) -> Optional[EmailNotification]:
