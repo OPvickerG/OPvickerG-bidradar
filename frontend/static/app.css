@@ -152,3 +152,4 @@ body.bare { background: radial-gradient(circle at 30% 20%, #1b3043 0, var(--side
 .coverage{display:grid;gap:8px}
 .coverage .k{display:inline-block;min-width:210px;color:var(--muted,#667);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .warn-text{color:#9a5b00}
+.geo{white-space:nowrap}.geo-yes{color:#0b6b3a;font-weight:600}.geo-no{color:#8a8f98}.geo-maybe{color:#7a5a00}
