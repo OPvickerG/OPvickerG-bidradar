@@ -12,7 +12,7 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Set
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from backend import settings_service as cfg
@@ -38,6 +38,7 @@ from scanner.source_adapters.registry import adapter_classes
 logger = logging.getLogger("bidradar.scan")
 DOC_ANALYSIS_MIN_SCORE = 40
 SWEEP_MEMORY = 6000              # bid numbers remembered by the all-bids sweep (about two days of new bids)
+KEEPALIVE_S = 60                 # seconds between keep-alive pings of the scan transaction
 RELEVANT_MIN_SCORE = 50          # stored flag used by the dashboard; alerts use the user's threshold
 DOC_TEXT_KEEP = 20000            # redacted English text kept for re-scoring (never personal data)
 
@@ -55,6 +56,7 @@ class Scan:
         self.adapters: Dict[str, SourceAdapter] = {}
         self.max_pages = self.s.backfill_pages_per_term if catch_up else self.s.max_pages_per_term
         self.deadline = time.monotonic() + (time_budget_s or self.s.scan_time_budget_minutes * 60)
+        self._last_ping = time.monotonic()
         self.should_stop: Callable[[], bool] = lambda: False    # set by the runner if this worker lost its lock
         self.home = (cfg.get(db, "geography") or {}).get("home")   # user's home place (distance filter), or None
         self.stats: Dict = {"sources": {}, "listings_seen": 0, "new_tenders": 0, "updated_tenders": 0,
@@ -70,7 +72,17 @@ class Scan:
 
     # ------------------------------------------------------------------ helpers
     def _time_left(self) -> bool:
+        self._keepalive()
         return time.monotonic() < self.deadline and not self.should_stop()
+
+    def _keepalive(self) -> None:
+        """The database ends a transaction left idle for 5 minutes (Neon: idle_in_transaction_session_timeout), and
+        a scan can spend longer than that on GeM requests between two writes (seen live 21-22 Nov 2026: every scan
+        failed while refreshing tracked tenders). A tiny query each minute keeps the scan's transaction alive."""
+        now = time.monotonic()
+        if now - self._last_ping >= KEEPALIVE_S:
+            self._last_ping = now
+            self.db.execute(text("SELECT 1"))
 
     def error(self, stage: str, msg: str, source_key: Optional[str] = None, tender_ref: Optional[str] = None,
               detail: Optional[str] = None):
@@ -114,6 +126,8 @@ class Scan:
 
     def run(self) -> Dict:
         db = self.db
+        if db.get_bind().dialect.name == "postgresql":     # belt and braces: this scan's transaction only
+            db.execute(text("SET LOCAL idle_in_transaction_session_timeout = '20min'"))
         self.load_models()
         terms = list(dict.fromkeys(t for m in self.models if m.enabled for t in m.discovery))
         sources = db.execute(select(Source).where(Source.enabled.is_(True)).order_by(Source.id)).scalars().all()
