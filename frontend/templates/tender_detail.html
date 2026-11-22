@@ -18,7 +18,9 @@
   </div>
 </div>
 
-{% if d.get('summary') %}<section class="card card-sum"><h2>Summary</h2><p class="sum-text">{{ d.summary }}</p></section>{% endif %}
+{% if d.get('summary') %}<section class="card card-sum"><h2>Summary</h2><p class="sum-text">{{ d.summary }}</p>
+  {% set g = d.get('geo') %}{% if g %}<p class="small"><b>Where:</b> <span class="geo geo-{{ g.near or 'na' }}">{{ g|geolabel(home.name if home else None) }}</span>
+  <span class="muted">· from {{ g.basis }}</span></p>{% endif %}</section>{% endif %}
 
 <div class="grid2">
   <div class="col">

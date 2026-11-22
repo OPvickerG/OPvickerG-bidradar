@@ -104,7 +104,10 @@
   <h2>Geographic filter</h2>
   <form method="post" action="/settings/geography">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <p class="small muted">Leave everything unselected to receive alerts from all of India. States are taken from consignee PIN codes in the tender document (India Post circles, approximate) or from the buyer's name.</p>
+    <label>Home town (alerts and the tender list focus on work near here)<input name="home" value="{{ s.geography.home.name if s.geography.home else '' }}" placeholder="e.g. Karnal"></label>
+    <label>Radius (km)<input name="radius_km" type="number" min="10" max="3000" value="{{ s.geography.home.radius_km if s.geography.home else 250 }}"></label>
+    <p class="small muted">Location is read from the delivery PIN codes and places in the bid document, the buying office and the title. A tender whose location is not stated is never hidden; one known to be outside the radius is not alerted (it stays visible under "All India").</p>
+    <p class="small muted">Optional extra filter: leave everything unselected to receive alerts from all of India. States are taken from consignee PIN codes in the tender document (India Post circles, approximate) or from the buyer's name.</p>
     <div class="checks checks-states">
       {% for st in states %}<label class="chk"><input type="checkbox" name="states" value="{{ st }}" {{ 'checked' if st in s.geography.states }}> {{ st }}</label>{% endfor %}
     </div>

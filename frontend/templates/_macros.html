@@ -17,7 +17,7 @@
     <a href="/tenders/{{ t.id }}" class="t-title">{{ t.title[:140] }}</a>
     {% if (t.details or {}).get('summary') %}<div class="t-sum">{{ t.details.summary }}</div>{% endif %}
     <div class="t-meta">{{ cat(t.best_category) }} <span class="mono">{{ t.bid_number or t.external_id }}</span>{% if t.ra_number %} · RA{% endif %}
-      · {{ t.organization or t.department or t.ministry or '—' }}{% if t.state %} · {{ t.state }}{% endif %}{% if t.watched %} · <b class="watch">watched</b>{% endif %}</div>
+      · {{ t.organization or t.department or t.ministry or '—' }}{% set g = (t.details or {}).get('geo') %}{% if g and (g.place or g.state) %} · <span class="geo geo-{{ g.near or 'na' }}">{{ g|geolabel }}</span>{% elif t.state %} · {{ t.state }}{% endif %}{% if t.watched %} · <b class="watch">watched</b>{% endif %}</div>
   </td>
   <td class="nowrap">{{ t.deadline_at|ist }}<div class="t-meta">{{ t.deadline_at|until }}</div></td>
   <td class="num">{{ t.estimated_value|money }}</td>
