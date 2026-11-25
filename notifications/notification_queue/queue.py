@@ -134,8 +134,9 @@ def tender_qualifies(db: Session, t: Tender) -> bool:
     if t.best_category and t.best_category not in (m.get("enabled_categories") or []):
         return False
     g = (t.details or {}).get("geo") or {}
-    if geo.get("home") and g.get("near") == "no":
-        return False                  # known to be outside the home radius (unknown location still alerts)
+    if geo.get("home") and g.get("near") != "yes":
+        return False                  # alert only for work confirmed within the home radius; the location is read
+                                      # from the bid document first, and the alert goes out once it is known
     pins = (t.details or {}).get("pins") or []
     if (geo.get("states") or geo.get("pin_prefixes")) and (t.state or pins):
         return matches_geography(t.state, pins, geo.get("states"), geo.get("pin_prefixes"))
