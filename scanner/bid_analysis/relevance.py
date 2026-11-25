@@ -23,6 +23,48 @@ _EQUIPMENT_RX = re.compile(
     r"(machineunit|machine|machines|equipment|bench|benches|stand|tool|tools|kit|kits|scanner|tester|rig|machinery)\b")
 _JOB_WORK_RX = re.compile(r"\b(job work|repair|overhaul|servicing|maintenance|amc|cmc|reconditioning)\b")
 
+# The business is road vehicles and DG sets. GeM files aircraft, ship and gun work under "Repair and Overhauling
+# Service - built up trucks / cars", so the item itself (after the GeM category label) decides.
+_NOT_ROAD_RX = re.compile(
+    r"\b(helicopters?|aircrafts?|aero ?engines?|aeroengines?|avionics?|airframes?|aviation|mi 17|mi 8|chetak|cheetah|"
+    r"alh|dhruv|uavs?|drones?|microlite|microlight|ships?|vessels?|boats?|marine crafts?|marine engines?|watercrafts?|"
+    r"lcm|landing crafts?|locomotives?|rolling stock|railway coach(?:es)?|bofors|howitzers?|artillery|155mm|105mm|"
+    r"field guns?|tanks? t ?72|t ?90|bmp ?2)\b")
+_ROAD_VEHICLE_RX = re.compile(
+    r"\b(refuell?ers?|bowsers?|trucks?|lorry|lorries|vehicles?|bus|buses|minibus(?:es)?|vans?|cars?|jeeps?|gypsy|"
+    r"ambulances?|tractors?|tippers?|tankers?|motor ?cycles?|scooters?|suvs?|muvs?|pick ?up|dg sets?|d g sets?|"
+    r"gensets?|generators?|generating sets?)\b")
+# Hiring, leasing or insuring a vehicle / DG set is not a repair job.
+_HIRE_RX = re.compile(r"\b(hiring|hire|hired|on rent|rental|leasing|lease|insurance|all inclusive|outsourcing|"
+                      r"manpower)\b")
+_REPAIR_WORDS_RX = re.compile(r"\b(repairs?|repairing|overhaul\w*|recondition\w*|rectification|servicing|"
+                              r"maintenance|amc|cmc|breakdown|denting)\b")
+_VEHICLE_LABEL_RX = re.compile(r"repair and overhauling service (?:built up trucks|cars|vehicles?|buses|trucks)")
+_REPAIR_CATEGORY_RX = re.compile(r"(repair and overhauling service|customized amc/cmc|repair, maintenance)")
+_GEM_LABEL_RX = re.compile(r"^[^;]{0,120}? - [^;]{0,80};")
+
+
+def item_text(title: str, description: str = "") -> str:
+    """The item being bought, without GeM's category label ('Repair and Overhauling Service - built up trucks;')."""
+    parts = []
+    for t in (title or "", description or ""):
+        parts.append(_GEM_LABEL_RX.sub(" ", t, count=1))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", " ".join(parts).lower()).split())
+
+
+def scope_penalties(title: str, description: str = "") -> List[Tuple[int, str]]:
+    """(score cap, reason) for work outside the business, however strong the keyword match."""
+    item = item_text(title, description)
+    full = " ".join(re.sub(r"[^a-z0-9]+", " ", f"{title or ''} {description or ''}".lower()).split())
+    in_scope = _ROAD_VEHICLE_RX.search(_VEHICLE_LABEL_RX.sub(" ", full))     # ignore GeM's generic vehicle label
+    out = []
+    if _NOT_ROAD_RX.search(item) and not in_scope:
+        out.append((20, "aircraft / ship / rail / weapon work, not road vehicles or DG sets"))
+    repair_category = _REPAIR_CATEGORY_RX.match((title or "").strip().lower())   # the buyer chose a repair category
+    if _HIRE_RX.search(item) and not _REPAIR_WORDS_RX.search(item) and not repair_category:
+        out.append((30, "hiring / leasing / insurance, not a repair job"))
+    return out
+
 
 def band(score: int) -> str:
     if score >= 90:
@@ -124,6 +166,9 @@ def score_category(model: CategoryModel, title: str, description: str = "", docu
     if lex.negatives:
         total -= 45
         penalties.append("unrelated context " + ", ".join(f"'{n}'" for n in lex.negatives[:3]))
+    scope_caps = scope_penalties(title, description)
+    for _, reason in scope_caps:
+        penalties.append(reason)
     norm_main = normalise(main)
     if model.supply_only_penalty and _is_supply_only(main, procurement_type):
         total -= 25
@@ -137,6 +182,8 @@ def score_category(model: CategoryModel, title: str, description: str = "", docu
         total = min(total, cap)
     if equipment_purchase:
         total = min(total, 35)
+    for cap_at, _ in scope_caps:
+        total = min(total, cap_at)
     score = int(max(0, min(100, round(total))))
     matched = list(dict.fromkeys(lex.phrases + lex.synonyms + lex.fuzzy +
                                  ([f"{con.obj} + {con.action}"] if con else [])))

@@ -1,6 +1,7 @@
 """Where is the work, and how far is it from home?
 
 Evidence, strongest first (only what the portal or the bid document states; nothing is guessed):
+  0. consignee cities from GeM's own consignee-location search
   1. delivery / consignee PIN codes in the bid document
   2. consignee place names in the document (GeM masks the street address but usually leaves the district)
   3. the buying office named in the document
@@ -63,6 +64,11 @@ def locate(t, home: Optional[Dict] = None) -> Dict:
     hint = t.state or next((state_from_pin(p) for p in pins), None) or state_from_text(cons, f.get("office"))
 
     candidates: List[Tuple[str, float, float, str, str]] = []      # name, lat, lon, state, basis
+    for c in d.get("consignees") or []:
+        st = state_from_text((c.get("state") or "").replace("&", "and"))
+        hit = (find_places(c.get("city"), st) or [None])[0] or fuzzy_place(c.get("city") or "")
+        if hit:
+            candidates.append((hit[0], hit[1], hit[2], hit[3], "GeM consignee city"))
     for p in pins:
         if p[:3] in PIN3:
             name, la, lo, st = PIN3[p[:3]]
@@ -77,8 +83,9 @@ def locate(t, home: Optional[Dict] = None) -> Dict:
                 candidates.append((fp[0], fp[1], fp[2], fp[3], "delivery district in bid document"))
     if not candidates and districts and dense_coverage(home) \
             and not any(dn.lower() in AMBIGUOUS for dn in districts) \
-            and not state_from_text(cons) in (None,) + tuple(_near_states(home)):
-        # a named delivery district that is not any place in (or near) the home area: outside the radius
+            and state_from_text(cons) not in tuple(_near_states(home)):
+        # A named delivery district that is no known place: every district and town around the home area is in the
+        # gazetteer (plus common misspellings, matched fuzzily), so an unknown one is outside the radius.
         return {"place": districts[0].title(), "state": state_from_text(cons), "km": None,
                 "basis": "delivery district in bid document", "near": "no"}
     if not candidates:
