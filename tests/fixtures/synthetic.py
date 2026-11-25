@@ -39,6 +39,8 @@ class MockGem:
         self.fail_listing = False
         self.page_size = None
         self.calls: List[str] = []
+        self.consignee: Dict[tuple, List[Dict]] = {}      # (STATE, CITY) -> docs delivering there
+        self.cities: Dict[str, List[str]] = {}             # STATE -> consignee city names
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -68,6 +70,19 @@ class MockGem:
                 return httpx.Response(404, text="")
             return httpx.Response(200, json={"code": 200, "response": {"response": {"numFound": len(hits),
                                                                                   "docs": json.loads(json.dumps(chunk))}}})
+        if path == "/city-list-adv":
+            form = parse_qs(request.content.decode())
+            return httpx.Response(200, json={"success": 1, "data": [{"city_name": c} for c in
+                                                                     self.cities.get(form["state_name"][0], [])]})
+        if path == "/search-bids":
+            form = parse_qs(request.content.decode())
+            assert form.get("csrf_bd_gem_nk") == [CSRF]
+            pl = json.loads(form["payload"][0])
+            assert pl["searchType"] == "con"
+            hits = self.consignee.get((pl["state_name_con"], pl["city_name_con"]), [])
+            chunk = hits[(pl["page"] - 1) * 10: pl["page"] * 10]
+            return httpx.Response(200, json={"code": 200, "response": {"response": {
+                "numFound": len(hits), "start": (pl["page"] - 1) * 10, "docs": json.loads(json.dumps(chunk))}}})
         if path.startswith("/public-bid-other-details/"):
             b = path.rsplit("/", 1)[1]
             return httpx.Response(200, json={"response": {"corrigendum": b in self.corrigenda, "representation": False}})
