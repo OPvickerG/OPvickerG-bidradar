@@ -21,6 +21,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from core.geo import state_from_pin, state_from_text
+from database.schema.models import doc_consignee_of, doc_text_of
 from core.places import AMBIGUOUS, PIN3, dense_coverage, find_places, fuzzy_place, haversine_km, state_min_km
 
 STATE_MARGIN_KM = 50
@@ -62,7 +63,7 @@ def locate(t, home: Optional[Dict] = None) -> Dict:
     d = t.details or {}
     f = d.get("doc_fields") or {}
     hp = _home(home)
-    cons = d.get("doc_consignee") or consignee_text(d.get("doc_text"))
+    cons = doc_consignee_of(t) or consignee_text(doc_text_of(t))
     pins: List[str] = list(dict.fromkeys((f.get("consignee_pins") or []) + _PIN_RX.findall(cons)))
     pins = [p for p in pins if state_from_pin(p)]
     hint = t.state or next((state_from_pin(p) for p in pins), None) or state_from_text(cons, f.get("office"))
