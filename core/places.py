@@ -134,10 +134,37 @@ PLACES: Dict[str, Tuple[float, float, str]] = {
     "panaji": (15.49, 73.83, "Goa"), "south goa": (15.20, 74.00, "Goa"), "north goa": (15.55, 73.85, "Goa"),
     "vasco da gama": (15.40, 73.81, "Goa"), "port blair": (11.62, 92.73, "Andaman and Nicobar"),
     "durg": (21.19, 81.28, "Chhattisgarh"), "bhilai": (21.21, 81.38, "Chhattisgarh"),
+    # small towns close to the north-Haryana / Chandigarh area (so nothing nearby is ever called "far")
+    "saha": (30.30, 76.97, H), "sadhaura": (30.38, 77.22, H), "chhachhrauli": (30.25, 77.36, H),
+    "mustafabad": (30.20, 77.15, H), "morni": (30.70, 77.07, H), "indri": (29.88, 77.06, H), "pipli": (29.98, 76.88, H),
+    "jagadhari": (30.17, 77.30, H), "jagadhri workshop": (30.17, 77.30, H), "kala amb": (30.51, 77.21, HP),
+    "barotiwala": (30.89, 76.84, HP), "kurali": (30.83, 76.58, P), "dappar": (30.56, 76.86, P),
+    "behat": (30.17, 77.62, UP), "tibri": (32.08, 75.37, P), "sarsawa": (30.02, 77.40, UP),
+    # districts and stations that GeM bid documents name (often in their own spelling)
+    "anantnag": (33.73, 75.15, JK), "ananthnag": (33.73, 75.15, JK), "rajauri": (33.38, 74.31, JK),
+    "kupwara": (34.53, 74.26, JK), "baramulla": (34.20, 74.34, JK), "uri": (34.08, 74.03, JK),
+    "akhnoor": (32.87, 74.74, JK), "nagrota": (32.80, 74.93, JK), "samba": (32.56, 75.12, JK), "gurez": (34.63, 74.84, JK),
+    "kargil": (34.56, 76.13, "Ladakh"), "drass": (34.43, 75.75, "Ladakh"), "partapur": (34.70, 77.47, "Ladakh"),
+    "jalpaiguri": (26.52, 88.72, "West Bengal"), "binnaguri": (26.77, 89.04, "West Bengal"),
+    "sukna": (26.79, 88.36, "West Bengal"), "bengdubi": (26.80, 88.40, "West Bengal"),
+    "panagarh": (23.45, 87.43, "West Bengal"), "barrackpore": (22.76, 88.37, "West Bengal"),
+    "purulia": (23.33, 86.36, "West Bengal"), "tawang": (27.59, 91.86, "Arunachal Pradesh"),
+    "bomdila": (27.26, 92.42, "Arunachal Pradesh"), "likabali": (27.66, 94.70, "Arunachal Pradesh"),
+    "aalo": (28.17, 94.80, "Arunachal Pradesh"), "dimapur": (25.91, 93.73, "Nagaland"),
+    "zakhama": (25.62, 94.10, "Nagaland"), "leimakhong": (24.93, 93.85, "Manipur"),
+    "dibrugarh": (27.47, 94.91, "Assam"), "missamari": (26.82, 92.60, "Assam"), "rangiya": (26.45, 91.62, "Assam"),
+    "narangi": (26.18, 91.82, "Assam"), "masimpur": (24.81, 92.80, "Assam"), "barmer": (25.75, 71.39, RJ),
+    "jaisalmer": (26.92, 70.91, RJ), "pokhran": (26.92, 71.92, RJ), "amreli": (21.60, 71.22, "Gujarat"),
+    "bhuj": (23.25, 69.67, "Gujarat"), "babina": (25.25, 78.47, UP), "mhow": (22.55, 75.76, "Madhya Pradesh"),
+    "deolali": (19.95, 73.83, "Maharashtra"), "wellington": (11.37, 76.79, "Tamil Nadu"),
+    "hazaribagh": (23.99, 85.36, "Jharkhand"), "kakinada": (16.96, 82.24, "Andhra Pradesh"),
+    "chengalpattu": (12.69, 79.98, "Tamil Nadu"), "kalpakkam": (12.52, 80.16, "Tamil Nadu"),
+    "mirzapur": (25.15, 82.57, UP),
 }
 
 # Names shared by places in different states: resolved only with a state hint from the same tender.
 AMBIGUOUS: Dict[str, List[Tuple[float, float, str]]] = {
+    "barwala": [(30.60, 76.97, H), (29.37, 75.91, H)],
     "bilaspur": [(31.33, 76.76, HP), (22.08, 82.15, "Chhattisgarh")],
     "hamirpur": [(31.68, 76.52, HP), (25.95, 80.15, UP)],
     "mandi": [(31.71, 76.93, HP)],          # also a common word ("Krishi Upaj Mandi"): needs the HP hint
