@@ -7,6 +7,9 @@ Mechanisms verified in research (Phase 1 & 2, Nov 2026):
   * flags: POST /public-bid-other-details/{b_id} -> {"response":{"corrigendum":bool,"representation":bool}}
   * corrigenda: POST /bidding/bid/viewCorrigendum/{b_id} (HTML)
   * results: GET /bidding/bid/getBidResultView/{b_id} (public HTML: bidders, qualified/disqualified, L1..Ln)
+  * consignee location (public Advanced Search, verified 25 Nov 2026): POST /city-list-adv (state_name) -> cities;
+    POST /search-bids (payload {searchType:"con", state_name_con, city_name_con, page}) -> same Solr JSON, 10/page,
+    every ongoing bid that delivers to that city, whatever its title says
 No login, CAPTCHA or OTP is touched. Buyer officials' personal details on result pages are never stored."""
 from __future__ import annotations
 
@@ -215,6 +218,38 @@ class GemBidPlusAdapter(SourceAdapter):
         except NoResults:
             return [], 0
         return [doc_to_raw(d, "ongoing_bids") for d in resp.get("docs", [])], int(resp.get("numFound") or 0)
+
+    def consignee_cities(self, state: str) -> List[str]:
+        """GeM's own list of consignee cities for a state (state as GeM spells it, e.g. 'HARYANA')."""
+        if not self.token:
+            self._init()
+        r = self.http.request("POST", "/city-list-adv", data={"state_name": state, "csrf_bd_gem_nk": self.token},
+                              headers={"X-Requested-With": "XMLHttpRequest", "Referer": BASE + "/advance-search"})
+        j = json.loads(r.text or "{}")
+        return [c["city_name"].strip() for c in (j.get("data") or []) if (c.get("city_name") or "").strip()]
+
+    def fetch_consignee(self, state: str, city: str, page: int) -> Tuple[List[RawTender], int]:
+        """One page (10) of ALL ongoing bids delivering to a consignee city, plus the total for that city."""
+        if not self.token:
+            self._init()
+        payload = json.dumps({"searchType": "con", "state_name_con": state, "city_name_con": city,
+                              "bidEndFromCon": "", "bidEndToCon": "", "page": page})
+        r = self.http.request("POST", "/search-bids", allow_404=True,
+                              data={"payload": payload, "csrf_bd_gem_nk": self.token},
+                              headers={"X-Requested-With": "XMLHttpRequest", "Referer": BASE + "/advance-search"})
+        if r.status_code == 404:
+            return [], 0
+        j = r.json()
+        if j.get("code") != 200:
+            raise RuntimeError(f"unexpected consignee search response code {j.get('code')}")
+        resp = j["response"]["response"]
+        raws = []
+        for d in resp.get("docs", []):
+            d.pop("b.b_created_by", None)
+            raw = doc_to_raw(d, "ongoing_bids")
+            raw.extra["consignee"] = {"city": city, "state": state}
+            raws.append(raw)
+        return raws, int(resp.get("numFound") or 0)
 
     def lookup(self, number: str) -> Optional[RawTender]:
         for mode in ("ongoing_bids", "bidrastatus", "cancelled_bids"):
