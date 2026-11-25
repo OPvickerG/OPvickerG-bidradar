@@ -12,8 +12,8 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Set
 
-from sqlalchemy import or_, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.orm import Session, defer
 
 from backend import settings_service as cfg
 from core.config import get_settings
@@ -21,7 +21,8 @@ from core.geo import state_from_pin, state_from_text
 from core.logs import log
 from core.timeutil import IST, ensure_utc, fmt_ist, parse_ist_string, to_ist, utcnow
 from database.schema.models import (BidObservation, EmailNotification, ScanError, ScanExecution, Source,
-                                    SystemEvent, Tender, TenderDocument, TenderEvent, TenderMatch)
+                                    SystemEvent, Tender, TenderDocument, TenderEvent, TenderMatch, TenderText,
+                                    doc_text_of, store_doc_text)
 from database.seed.loader import load_models
 from notifications.notification_queue import queue as nq
 from scanner.bid_analysis.gem_document import eligibility_summary, parse_gem_bid_text, requirements_summary
@@ -37,9 +38,15 @@ from scanner.source_adapters.registry import adapter_classes
 
 logger = logging.getLogger("bidradar.scan")
 DOC_ANALYSIS_MIN_SCORE = 40
+# bump whenever matching rules change (categories.yaml / relevance.py): a worker running OLDER rules then leaves
+# stored scores alone instead of re-scoring every tender back and forth
+SCORING_VERSION = 5
+# columns left out of bulk queries (loaded on first use, i.e. only for the few rows actually worked on)
+_LIGHT = (defer(Tender.details), defer(Tender.description), defer(Tender.match_explanation))
 SWEEP_MEMORY = 6000              # bid numbers remembered by the all-bids sweep (about two days of new bids)
 KEEPALIVE_S = 60                 # seconds between keep-alive pings of the scan transaction
 RELEVANT_MIN_SCORE = 50          # stored flag used by the dashboard; alerts use the user's threshold
+CRAWL_RESERVE_S = 480           # seconds of each scan kept for the full-GeM crawl (6.5 min of pages + 90 s wrap-up)
 DOC_TEXT_KEEP = 20000            # redacted English text kept for re-scoring (never personal data)
 
 
@@ -550,7 +557,7 @@ class Scan:
 
     # ------------------------------------------------------------------ scoring
     def score(self, t: Tender):
-        doc_text = (t.details or {}).get("doc_text") or ""
+        doc_text = doc_text_of(t)
         r = score_tender(t.title, t.description or "", doc_text, t.procurement_type, self.models, self.embedder)
         t.relevance_score, t.best_category, t.match_explanation = r.score, r.best_category, r.explanation
         t.is_relevant = r.score >= RELEVANT_MIN_SCORE
@@ -586,21 +593,33 @@ class Scan:
                        key=lambda x: -x.relevance_score)
         # every open match whose document is not read yet (not only the top 200: seen 25 Nov 2026, 85 matches had
         # waited days); location unknown / nearby before known-far, then by score
-        rows = db.execute(select(Tender).where(Tender.relevance_score >= DOC_ANALYSIS_MIN_SCORE,
-                                               Tender.status == "active", Tender.details.is_not(None))).scalars().all()
-        unread = [t for t in rows if (t.details or {}).get("doc_status") != "extracted"]
-        cands += sorted(unread, key=lambda t: (((t.details or {}).get("geo") or {}).get("near") == "no",
-                                               -t.relevance_score))
-        # documents read before 25 Nov 2026 kept only their first 20,000 characters, which can cut off the
-        # consignee list of long bids: read those again (once) so every delivery address is seen
-        reread = [t for t in rows if (t.details or {}).get("doc_status") == "extracted"
-                  and "doc_consignee" not in (t.details or {})
-                  and len((t.details or {}).get("doc_text") or "") >= DOC_TEXT_KEEP]
+        # the backlog is looked up once per scan (analyse_documents also runs after refresh_tracked), and only rows
+        # that still need reading are loaded: pulling every open match with its document text each time used up the
+        # database's monthly transfer allowance (seen 25 Nov 2026)
+        reread: List[Tender] = []
+        if not getattr(self, "_backlog_loaded", False):
+            self._backlog_loaded = True
+            has_text = select(TenderDocument.tender_id).where(TenderDocument.status == "extracted")
+            rows = db.execute(select(Tender).where(Tender.relevance_score >= DOC_ANALYSIS_MIN_SCORE,
+                                                   Tender.status == "active", Tender.id.not_in(has_text))).scalars().all()
+            unread = [t for t in rows if (t.details or {}).get("doc_status") != "extracted"]
+            cands += sorted(unread, key=lambda t: (((t.details or {}).get("geo") or {}).get("near") == "no",
+                                                   -t.relevance_score))
+            # documents read before 25 Nov 2026 kept only their first 20,000 characters, which can cut off the
+            # consignee list of long bids: read those again (once) so every delivery address is seen
+            rr_ids = [i for (i,) in db.execute(
+                select(TenderText.tender_id).join(Tender, Tender.id == TenderText.tender_id)
+                .where(TenderText.doc_consignee.is_(None), func.length(TenderText.doc_text) >= DOC_TEXT_KEEP,
+                       Tender.status == "active", Tender.relevance_score >= DOC_ANALYSIS_MIN_SCORE))]
+            reread = [db.get(Tender, i) for i in rr_ids[:max(budget, 0)]]
         reread_ids = {t.id for t in reread}
         cands += sorted(reread, key=lambda t: -t.relevance_score)
         done: Set[int] = set()
+        # leave the full-GeM crawl at least CRAWL_RESERVE_S of every scan (seen 25 Nov 2026: a backlog of documents
+        # used the whole budget and the crawl read 0 pages)
+        stop_at = self.deadline - (CRAWL_RESERVE_S if self.s.deep_crawl_minutes > 0 else 0)
         for t in cands:
-            if budget <= 0 or not self._time_left():
+            if budget <= 0 or not self._time_left() or time.monotonic() > stop_at:
                 break
             if t.id in done:
                 continue
@@ -608,7 +627,9 @@ class Scan:
             urls = (t.details or {}).get("document_urls") or []
             for du in urls[:2]:
                 doc = db.execute(select(TenderDocument).where(TenderDocument.tender_id == t.id,
-                                                              TenderDocument.url == du["url"])).scalar_one_or_none()
+                                                              TenderDocument.url == du["url"])
+                                 .options(defer(TenderDocument.text_excerpt), defer(TenderDocument.extracted_fields))
+                                 ).scalar_one_or_none()
                 if doc is not None and doc.status != "pending" and not (t.id in reread_ids and doc.status == "extracted"
                                                                      and du["kind"] == "bid_document"):
                     retry_failed = doc.status == "failed" and doc.fetched_at and \
@@ -655,13 +676,15 @@ class Scan:
                 for c in diff_eligibility(old_fields, fields):
                     self.event(t, c)
             d["doc_fields"] = {k: v for k, v in fields.items() if v not in (None, "", [])}
-            d["doc_text"] = res.text[:DOC_TEXT_KEEP]
-            d["doc_consignee"] = consignee_text(res.text)[:8000]    # delivery sections from the WHOLE document
+            d.pop("doc_text", None)
+            d.pop("doc_consignee", None)
             d["eligibility"] = eligibility_summary(fields)
             d["requirements"] = requirements_summary(fields)
             pins = fields.get("consignee_pins") or []
             d["pins"] = pins
             t.details = d
+            # delivery sections come from the WHOLE document; both texts are kept outside 'details'
+            store_doc_text(t, res.text[:DOC_TEXT_KEEP], consignee_text(res.text)[:8000])
             self.apply_doc_fields(t, fields)
             self.score(t)
             self.touched[t.id] = t
@@ -706,7 +729,8 @@ class Scan:
         rows = db.execute(select(Tender).where(
             or_(Tender.watched.is_(True), Tender.relevance_score >= min(threshold, RELEVANT_MIN_SCORE)),
             Tender.status.not_in(["cancelled"]),
-        ).order_by(Tender.last_refreshed_at.is_(None).desc(), Tender.last_refreshed_at)).scalars().all()
+        ).order_by(Tender.last_refreshed_at.is_(None).desc(), Tender.last_refreshed_at)
+            .options(*_LIGHT)).scalars().all()          # big columns load only for the tenders actually refreshed
         budget = self.s.max_refreshes_per_scan
         for t in rows:
             if budget <= 0 or not self._time_left():
@@ -789,7 +813,8 @@ class Scan:
     def close_expired(self):
         now = utcnow()
         rows = self.db.execute(select(Tender).where(Tender.status == "active", Tender.deadline_at.is_not(None),
-                                                    Tender.deadline_at < now - timedelta(minutes=30))).scalars().all()
+                                                    Tender.deadline_at < now - timedelta(minutes=30))
+                               .options(*_LIGHT)).scalars().all()
         for t in rows:
             if ensure_utc(t.deadline_at) < now - timedelta(minutes=30):
                 self.event(t, Change("status_changed", "status", "active", "closed", False))
@@ -926,6 +951,11 @@ def rescore_if_rules_changed(db: Session) -> int:
     cur = cfg.get(db, "scoring") or {}
     if cur.get("fingerprint") == fp:
         return 0
+    if int(cur.get("version") or 0) > SCORING_VERSION:
+        # newer rules were applied by another worker (Mac helper vs. server mid-deploy): never undo them, and never
+        # ping-pong a full re-score of every stored tender each scan
+        log(logger, logging.WARNING, "older scoring code: not re-scoring", mine=SCORING_VERSION, stored=cur.get("version"))
+        return 0
     n = rescore_all(db, only_active=True)
     db.flush()
     cancelled = 0
@@ -936,7 +966,7 @@ def rescore_if_rules_changed(db: Session) -> int:
         if t is not None and not nq.tender_qualifies(db, t):
             note.status, note.last_error = "cancelled", "tender no longer matches after scoring rules were updated"
             cancelled += 1
-    cfg.put(db, "scoring", {"fingerprint": fp, "rescored": n, "alerts_cancelled": cancelled,
+    cfg.put(db, "scoring", {"fingerprint": fp, "version": SCORING_VERSION, "rescored": n, "alerts_cancelled": cancelled,
                             "at": utcnow().isoformat()})
     log(logger, logging.INFO, "scoring rules changed: re-scored stored tenders", rescored=n, alerts_cancelled=cancelled)
     return n
@@ -1037,8 +1067,11 @@ def relocate_if_changed(db: Session) -> int:
     """Run relocate_all once whenever the location rules or the home place change."""
     home = (cfg.get(db, "geography") or {}).get("home") or {}
     key = f"{GEO_VERSION}:{home.get('lat')}:{home.get('lon')}:{home.get('radius_km')}"
-    if (cfg.get(db, "geo_version") or {}).get("key") == key:
+    stored = (cfg.get(db, "geo_version") or {}).get("key") or ""
+    if stored == key:
         return 0
+    if stored.split(":")[0].isdigit() and int(stored.split(":")[0]) > int(GEO_VERSION):
+        return 0                        # newer location rules already applied by another worker
     n = relocate_all(db)
     cfg.put(db, "geo_version", {"key": key, "updated": utcnow().isoformat(), "tenders": n})
     return n
