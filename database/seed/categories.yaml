@@ -259,6 +259,33 @@ categories:
       - annual maintenance of dg set
       - comprehensive maintenance of dg
       - vehicle repair
+      - repair of staff car
+      - repair of ambulance
+      - repair of motor cycle
+      - repair of tractor
+      - repair of fire tender
+      - repair of mt vehicles
+      - repair of b vehicles
+      - servicing of vehicles
+      - periodic maintenance of vehicles
+      - periodical servicing of vehicles
+      - denting and painting of vehicles
+      - denting painting of vehicle
+      - wheel alignment and balancing
+      - vehicle fleet maintenance
+      - comprehensive maintenance of vehicles
+      - amc of vehicles
+      - annual maintenance contract of vehicles
+      - engine overhaul of vehicle
+      - gear box overhaul
+      - clutch overhaul
+      - mechanical transport repair
+      - repair and overhauling service built up trucks
+      - repair and overhauling service buses
+      - repair and overhauling service motor cycles
+      - repair and overhauling service two wheeler
+      - repair and overhauling service tractor
+      - repair and overhauling service ambulance
     synonyms:
       - dg set
       - d g set
@@ -292,6 +319,16 @@ categories:
       - maruti
       - eicher
       - ashok leyland
+      - mt repair
+      - mt vehicles
+      - mechanical transport
+      - vehicle workshop
+      - automobile workshop
+      - denting painting
+      - wheel alignment
+      - fleet maintenance
+      - vehicle servicing
+      - b vehicle
     discovery:
       - vehicle repair
       - repair of vehicle
@@ -301,6 +338,16 @@ categories:
       - genset
       - diesel generator
       - generator repair
-    objects: [vehicle, vehicles, car, cars, automobile, motor vehicle, truck, trucks, lorry, bus, buses, minibus, van, vans, jeep, gypsy, ambulance, tractor, dg set, generator, genset, diesel generator, generating set, alternator, engine]
-    actions: [repair, repairs, overhaul, overhauling, servicing, service, maintenance, amc, cmc, reconditioning, recondition, rectification, breakdown]
-    negatives: [hiring of vehicle, vehicle hiring, cab hiring, taxi hiring, bus hiring, hiring of car, rental, on hire, purchase of vehicle, vehicle insurance, parking, washing only, transportation service, goods transport, fuel supply, petrol, tyre supply, battery supply, generator hiring, dg set hiring, rent of dg]
+      - bus repair
+      - vehicle servicing
+      - denting painting
+      - ambulance repair
+      - staff car
+    objects: [vehicle, vehicles, car, cars, automobile, automobiles, motor vehicle, truck, trucks, lorry, lorries, bus, buses, minibus, mini bus, van, vans, jeep, jeeps, gypsy, ambulance, ambulances, tractor, tractors,
+              suv, muv, pickup, pick up, tempo, tipper, tanker, water bowser, refueller, fire tender, fire engine, motorcycle, motor cycle, motorcycles, scooter, two wheeler, three wheeler, staff car, mt vehicle, mt vehicles, b vehicle, b vehicles, stallion, als, camper,
+              traveller, winger, sumo, safari, bolero, scorpio, xuv, thar, innova, crysta, ertiga, ciaz, dzire, swift, eeco, omni, alto, xylo, marazzo, canter, lpt, lpta, tata 407, tata 709, carrier vehicle, recovery vehicle, trailer,
+              tata motors, mahindra, maruti, maruti suzuki, ashok leyland, eicher, force motors, toyota, hyundai, isuzu, bharat benz, swaraj mazda,
+              gearbox, gear box, clutch, differential, axle, axles, suspension, steering box, power steering, steering system, radiator, brake, brakes, chassis, propeller shaft, self starter, starter motor, wiring harness,
+              dg set, dg sets, generator, generators, genset, gensets, diesel generator, generating set, alternator, engine, engines]
+    actions: [repair, repairs, repairing, overhaul, overhauling, servicing, service, maintenance, amc, cmc, reconditioning, recondition, rectification, breakdown, denting, painting, tinkering, alignment, balancing, rebuilding, refurbishment, upkeep, rewinding]
+    negatives: [hiring of vehicle, vehicle hiring, cab hiring, taxi hiring, bus hiring, hiring of car, rental, on hire, purchase of vehicle, vehicle insurance, parking, washing only, transportation service, goods transport, fuel supply, petrol, tyre supply, battery supply, generator hiring, dg set hiring, rent of dg, purchase of bus, purchase of car, procurement of vehicle, supply of vehicle, hiring of bus, taxi service, cab service]
