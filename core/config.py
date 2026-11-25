@@ -62,7 +62,9 @@ class Settings:
     sweep_pages: int = field(default_factory=lambda: _int("SCANNER_SWEEP_PAGES", 12))
     sweep_keep_min_score: int = field(default_factory=lambda: _int("SCANNER_SWEEP_KEEP_MIN_SCORE", 40))
     # full-inventory crawl: minutes per scan spent walking ALL open GeM bids (cursor persists between scans)
-    deep_crawl_minutes: float = field(default_factory=lambda: _float("DEEP_CRAWL_MINUTES", 4.0))
+    # the full-GeM crawl takes all the time a scan has left (about 10-15 min, ~300 pages): every open bid on
+    # GeM is re-checked by our own filter about every 7 hours
+    deep_crawl_minutes: float = field(default_factory=lambda: _float("DEEP_CRAWL_MINUTES", 20.0))
     # every ongoing bid delivering to a city near home (GeM consignee search), a few minutes per scan
     local_sweep_minutes: float = field(default_factory=lambda: _float("LOCAL_SWEEP_MINUTES", 4.0))
     local_keep_min_score: int = field(default_factory=lambda: _int("LOCAL_KEEP_MIN_SCORE", 25))

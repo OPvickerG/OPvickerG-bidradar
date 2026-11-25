@@ -200,6 +200,110 @@ PIN3: Dict[str, Tuple[str, float, float, str]] = {
     "333": ("Jhunjhunu", 28.13, 75.40, RJ), "334": ("Bikaner", 28.02, 73.31, RJ), "335": ("Sri Ganganagar", 29.90, 73.88, RJ),
 }
 
+# The rest of India (approximate centres of each 3-digit PIN area). With this table a PIN anywhere in a bid
+# document gives a place and a distance, not just a state.
+_PIN3_REST = """
+183 Jammu|32.70|74.90|JK 186 Kathua|32.40|75.50|JK 191 Srinagar / Budgam|34.00|74.75|JK 192 Anantnag / Pulwama|33.73|75.15|JK
+193 Baramulla / Kupwara|34.20|74.34|JK 194 Leh / Kargil|34.16|77.58|LA
+204 Hathras|27.60|78.05|UP 205 Mainpuri|27.23|79.02|UP 206 Etawah / Auraiya|26.78|79.02|UP 207 Etah / Kasganj|27.56|78.66|UP
+208 Kanpur|26.45|80.33|UP 209 Kanpur Dehat / Unnao / Kannauj|26.70|80.10|UP 210 Banda / Hamirpur / Mahoba|25.48|80.33|UP
+211 Prayagraj|25.44|81.85|UP 212 Fatehpur / Kaushambi|25.80|81.20|UP 221 Varanasi|25.32|82.97|UP 222 Jaunpur|25.75|82.69|UP
+223 Jaunpur / Bhadohi|25.60|82.50|UP 224 Ayodhya / Ambedkar Nagar|26.60|82.30|UP 225 Barabanki|26.93|81.20|UP
+226 Lucknow|26.85|80.95|UP 227 Lucknow rural|26.90|80.80|UP 228 Sultanpur / Amethi|26.26|82.07|UP 229 Raebareli|26.23|81.23|UP
+230 Pratapgarh (UP)|25.90|81.95|UP 231 Mirzapur / Sonbhadra|24.90|82.80|UP 232 Chandauli|25.27|83.27|UP 233 Ghazipur|25.58|83.58|UP
+241 Hardoi|27.40|80.13|UP 242 Shahjahanpur|27.88|79.91|UP 243 Bareilly / Budaun|28.37|79.43|UP 252 Rampur|28.80|79.03|UP
+261 Sitapur / Lakhimpur|27.57|80.68|UP 271 Gonda / Bahraich|27.13|81.96|UP 272 Basti / Siddharthnagar|26.80|82.73|UP
+273 Gorakhpur|26.76|83.37|UP 274 Deoria / Kushinagar|26.50|83.78|UP 275 Mau|25.94|83.56|UP 276 Azamgarh|26.07|83.18|UP
+277 Ballia|25.76|84.15|UP 281 Mathura|27.49|77.67|UP 282 Agra|27.18|78.01|UP 283 Firozabad|27.15|78.40|UP
+284 Jhansi / Lalitpur|25.45|78.57|UP 285 Jalaun / Orai|25.99|79.45|UP
+303 Jaipur rural|27.00|75.90|RJ 304 Tonk|26.17|75.79|RJ 305 Ajmer|26.45|74.64|RJ 306 Pali|25.77|73.32|RJ 307 Sirohi|24.88|72.86|RJ
+311 Bhilwara|25.35|74.63|RJ 312 Chittorgarh|24.88|74.62|RJ 313 Udaipur|24.58|73.71|RJ 314 Dungarpur|23.84|73.71|RJ
+321 Bharatpur|27.22|77.49|RJ 322 Sawai Madhopur / Karauli|26.00|76.35|RJ 323 Bundi|25.44|75.64|RJ 324 Kota|25.18|75.83|RJ
+325 Baran|25.10|76.51|RJ 326 Jhalawar|24.60|76.16|RJ 327 Banswara|23.55|74.44|RJ 328 Dholpur|26.70|77.89|RJ 332 Sikar|27.61|75.14|RJ
+341 Nagaur|27.20|73.73|RJ 342 Jodhpur|26.24|73.02|RJ 343 Jalore|25.35|72.62|RJ 344 Barmer|25.75|71.39|RJ 345 Jaisalmer|26.92|70.90|RJ
+360 Rajkot|22.30|70.80|GJ 361 Jamnagar|22.47|70.06|GJ 362 Junagadh|21.52|70.46|GJ 363 Surendranagar / Morbi|22.73|71.64|GJ
+364 Bhavnagar|21.76|72.15|GJ 365 Amreli|21.60|71.22|GJ 370 Kutch|23.25|69.67|GJ 380 Ahmedabad|23.02|72.57|GJ
+382 Gandhinagar|23.22|72.65|GJ 383 Sabarkantha|23.60|73.00|GJ 384 Mehsana / Patan|23.60|72.38|GJ 385 Banaskantha|24.17|72.43|GJ
+387 Kheda|22.75|72.68|GJ 388 Anand|22.56|72.95|GJ 389 Godhra / Dahod|22.77|73.61|GJ 390 Vadodara|22.31|73.18|GJ
+391 Vadodara rural|22.30|73.30|GJ 392 Bharuch|21.70|72.98|GJ 393 Narmada|21.87|73.50|GJ 394 Surat|21.17|72.83|GJ
+395 Surat|21.19|72.82|GJ 396 Valsad / Navsari|20.60|72.93|GJ
+400 Mumbai|19.08|72.88|MH 401 Palghar / Vasai|19.40|72.85|MH 402 Raigad|18.50|73.10|MH 403 Goa|15.50|73.83|GA 410 Raigad / Lonavala|18.75|73.40|MH
+411 Pune|18.52|73.86|MH 412 Pune rural|18.60|74.00|MH 413 Solapur|17.66|75.91|MH 414 Ahmednagar|19.09|74.74|MH
+415 Satara / Sangli|17.68|74.00|MH 416 Kolhapur|16.70|74.24|MH 421 Thane|19.20|73.10|MH 422 Nashik|20.00|73.79|MH
+423 Nashik rural|20.30|74.20|MH 424 Dhule|20.90|74.77|MH 425 Jalgaon|21.00|75.56|MH 431 Aurangabad (MH)|19.88|75.34|MH
+440 Nagpur|21.15|79.09|MH 441 Nagpur rural|21.15|79.10|MH 442 Chandrapur / Wardha|20.20|79.00|MH 443 Buldhana|20.53|76.18|MH
+444 Akola / Amravati|20.70|77.30|MH 445 Yavatmal|20.39|78.12|MH
+450 Khandwa|21.82|76.35|MP 451 Khargone|21.82|75.61|MP 452 Indore|22.72|75.86|MP 453 Indore rural / Mhow|22.55|75.76|MP
+454 Dhar|22.60|75.30|MP 455 Dewas|22.97|76.05|MP 456 Ujjain|23.18|75.78|MP 457 Ratlam|23.33|75.04|MP 458 Mandsaur / Neemuch|24.07|75.07|MP
+460 Betul|21.90|77.90|MP 461 Narmadapuram|22.75|77.72|MP 462 Bhopal|23.26|77.41|MP 464 Vidisha / Raisen|23.52|77.81|MP
+465 Shajapur / Rajgarh|23.43|76.27|MP 466 Sehore|23.20|77.08|MP 470 Sagar|23.84|78.74|MP 471 Chhatarpur|24.92|79.58|MP
+472 Tikamgarh|24.74|78.83|MP 473 Guna / Shivpuri|24.65|77.31|MP 474 Gwalior|26.22|78.18|MP 475 Datia|25.90|78.40|MP 476 Morena|26.50|78.00|MP
+477 Bhind|26.56|78.78|MP 480 Chhindwara|22.06|78.94|MP 481 Balaghat / Mandla|21.80|80.19|MP 482 Jabalpur|23.18|79.95|MP
+483 Katni|23.83|80.39|MP 484 Shahdol|23.30|81.36|MP 485 Satna|24.60|80.83|MP 486 Rewa|24.53|81.30|MP 487 Narsinghpur|22.95|79.19|MP
+488 Panna|24.72|80.19|MP
+490 Durg / Bhilai|21.19|81.28|CG 491 Rajnandgaon|21.10|81.03|CG 492 Raipur|21.25|81.63|CG 493 Mahasamund|21.10|82.10|CG
+494 Jagdalpur|19.08|82.02|CG 495 Bilaspur (CG)|22.08|82.15|CG 496 Raigarh|21.90|83.40|CG 497 Ambikapur|23.12|83.20|CG
+500 Hyderabad|17.39|78.49|TG 501 Hyderabad rural|17.30|78.30|TG 502 Sangareddy|17.62|78.08|TG 503 Nizamabad|18.67|78.09|TG
+504 Adilabad|19.66|78.53|TG 505 Karimnagar|18.44|79.13|TG 506 Warangal|17.97|79.60|TG 507 Khammam|17.25|80.15|TG
+508 Nalgonda|17.05|79.27|TG 509 Mahabubnagar|16.74|78.00|TG
+515 Anantapur|14.68|77.60|AP 516 Kadapa|14.47|78.82|AP 517 Tirupati / Chittoor|13.63|79.42|AP 518 Kurnool|15.83|78.04|AP
+520 Vijayawada|16.51|80.65|AP 521 Krishna|16.40|81.00|AP 522 Guntur|16.31|80.44|AP 523 Ongole|15.50|80.05|AP 524 Nellore|14.44|79.99|AP
+530 Visakhapatnam|17.69|83.22|AP 531 Visakhapatnam rural|17.80|83.00|AP 532 Srikakulam|18.30|83.90|AP 533 Kakinada|16.96|82.24|AP
+534 Eluru|16.71|81.10|AP 535 Vizianagaram|18.11|83.40|AP
+560 Bengaluru|12.97|77.59|KA 561 Chikkaballapur|13.43|77.73|KA 562 Bengaluru rural|13.00|77.30|KA 563 Kolar|13.14|78.13|KA
+570 Mysuru|12.30|76.64|KA 571 Chamarajanagar|12.10|76.70|KA 572 Tumakuru|13.34|77.10|KA 573 Hassan|13.00|76.10|KA
+574 Dakshina Kannada|13.00|75.00|KA 575 Mangaluru|12.91|74.86|KA 576 Udupi|13.34|74.75|KA 577 Shivamogga|13.93|75.57|KA
+580 Hubballi-Dharwad|15.36|75.12|KA 581 Uttara Kannada / Haveri|14.80|75.00|KA 582 Gadag|15.43|75.63|KA 583 Ballari|15.14|76.92|KA
+584 Raichur|16.20|77.36|KA 585 Kalaburagi / Bidar|17.33|76.83|KA 586 Vijayapura|16.83|75.71|KA 587 Bagalkot|16.18|75.70|KA
+590 Belagavi|15.85|74.50|KA 591 Belagavi rural|16.20|74.80|KA
+600 Chennai|13.08|80.27|TN 601 Tiruvallur|13.14|79.91|TN 602 Tiruvallur|13.14|79.91|TN 603 Chengalpattu|12.69|79.98|TN
+604 Tindivanam|12.24|79.65|TN 605 Puducherry|11.94|79.81|PY 606 Tiruvannamalai|12.23|79.07|TN 607 Cuddalore|11.75|79.75|TN
+608 Chidambaram|11.40|79.69|TN 609 Nagapattinam|10.77|79.84|TN 610 Thiruvarur|10.77|79.64|TN 611 Nagapattinam|10.77|79.84|TN
+612 Kumbakonam|10.96|79.38|TN 613 Thanjavur|10.79|79.14|TN 614 Pattukkottai|10.43|79.32|TN 620 Tiruchirappalli|10.79|78.70|TN
+621 Perambalur / Ariyalur|11.20|79.00|TN 622 Pudukkottai|10.38|78.82|TN 623 Ramanathapuram|9.37|78.83|TN 624 Dindigul|10.36|77.98|TN
+625 Madurai / Theni|9.93|78.12|TN 626 Virudhunagar|9.58|77.96|TN 627 Tirunelveli|8.71|77.76|TN 628 Thoothukudi|8.76|78.13|TN
+629 Kanyakumari|8.18|77.41|TN 630 Sivaganga / Karaikudi|10.07|78.78|TN 631 Kanchipuram / Ranipet|12.83|79.70|TN 632 Vellore|12.92|79.13|TN
+635 Krishnagiri|12.52|78.21|TN 636 Salem|11.66|78.15|TN 637 Namakkal|11.22|78.17|TN 638 Erode|11.34|77.72|TN 639 Karur|10.96|78.08|TN
+641 Coimbatore|11.02|76.96|TN 642 Pollachi / Tiruppur|10.66|77.00|TN 643 Nilgiris|11.41|76.70|TN
+670 Kannur|11.87|75.37|KL 671 Kasaragod|12.50|75.00|KL 673 Kozhikode / Wayanad|11.25|75.78|KL 676 Malappuram|11.07|76.07|KL
+678 Palakkad|10.78|76.65|KL 679 Palakkad / Malappuram|10.90|76.20|KL 680 Thrissur|10.53|76.21|KL 682 Kochi|9.97|76.28|KL
+683 Ernakulam / Aluva|10.10|76.35|KL 685 Idukki|9.85|76.97|KL 686 Kottayam|9.59|76.52|KL 688 Alappuzha|9.50|76.34|KL
+689 Pathanamthitta|9.26|76.78|KL 690 Kollam / Alappuzha|9.10|76.60|KL 691 Kollam|8.89|76.61|KL 695 Thiruvananthapuram|8.52|76.94|KL
+700 Kolkata|22.57|88.36|WB 711 Howrah|22.59|88.31|WB 712 Hooghly|22.90|88.30|WB 713 Bardhaman / Asansol|23.40|87.40|WB
+721 Medinipur|22.42|87.32|WB 722 Bankura|23.23|87.07|WB 723 Purulia|23.33|86.36|WB 731 Birbhum|23.90|87.53|WB 732 Malda|25.00|88.14|WB
+733 Dinajpur|25.62|88.12|WB 734 Siliguri / Darjeeling|26.72|88.43|WB 735 Jalpaiguri|26.52|88.72|WB 736 Cooch Behar / Alipurduar|26.32|89.45|WB
+737 Gangtok|27.33|88.61|SK 741 Nadia|23.40|88.50|WB 742 Murshidabad|24.10|88.27|WB 743 North 24 Parganas|22.75|88.50|WB
+744 Port Blair|11.67|92.74|AN
+751 Bhubaneswar|20.30|85.82|OD 752 Khordha / Puri|19.81|85.83|OD 753 Cuttack|20.46|85.88|OD 754 Jagatsinghpur|20.26|86.17|OD
+755 Jajpur|20.85|86.33|OD 756 Balasore / Bhadrak|21.49|86.93|OD 757 Mayurbhanj|21.93|86.73|OD 758 Keonjhar|21.63|85.58|OD
+759 Dhenkanal / Angul|20.84|85.10|OD 760 Berhampur|19.31|84.79|OD 761 Ganjam|19.50|84.50|OD 762 Kandhamal|20.47|84.23|OD
+763 Koraput|18.81|82.71|OD 764 Koraput / Malkangiri|18.50|82.30|OD 765 Rayagada|19.17|83.42|OD 766 Kalahandi|19.91|83.17|OD
+767 Bolangir|20.71|83.48|OD 768 Sambalpur|21.47|83.97|OD 769 Rourkela|22.26|84.85|OD 770 Sundargarh|22.12|84.03|OD
+781 Guwahati|26.14|91.74|AS 782 Nagaon|26.35|92.68|AS 783 Goalpara / Dhubri|26.17|90.62|AS 784 Tezpur|26.63|92.80|AS
+785 Jorhat / Sivasagar|26.75|94.20|AS 786 Dibrugarh / Tinsukia|27.48|94.91|AS 787 North Lakhimpur|27.23|94.10|AS 788 Silchar|24.83|92.78|AS
+790 Tawang / Bomdila|27.40|92.40|AR 791 Itanagar|27.10|93.62|AR 792 Tezu / Namsai|27.90|96.10|AR 793 Shillong|25.57|91.88|ML
+794 Tura|25.51|90.22|ML 795 Imphal|24.82|93.94|MN 796 Aizawl|23.73|92.72|MZ 797 Dimapur|25.90|93.73|NL 798 Kohima|25.67|94.11|NL
+799 Agartala|23.83|91.28|TR
+800 Patna|25.59|85.14|BR 801 Patna rural|25.40|85.00|BR 802 Bhojpur / Buxar|25.56|84.66|BR 803 Nalanda|25.20|85.50|BR
+804 Jehanabad / Gaya|25.21|84.99|BR 805 Nawada|24.88|85.54|BR 811 Munger|25.38|86.47|BR 812 Bhagalpur|25.24|86.98|BR
+813 Banka|24.89|86.92|BR 814 Deoghar / Dumka|24.48|86.69|JH 815 Giridih|24.19|86.30|JH 816 Sahebganj / Pakur|25.24|87.64|JH
+821 Rohtas / Sasaram|24.95|84.03|BR 822 Palamu|24.03|84.07|JH 823 Gaya|24.79|85.00|BR 824 Aurangabad (BR)|24.75|84.37|BR
+825 Hazaribagh|23.99|85.36|JH 826 Dhanbad|23.80|86.43|JH 827 Bokaro|23.67|86.15|JH 828 Dhanbad rural|23.80|86.40|JH
+829 Ramgarh|23.63|85.51|JH 831 Jamshedpur|22.80|86.20|JH 832 Seraikela|22.70|86.10|JH 833 Chaibasa|22.55|85.81|JH
+834 Ranchi|23.34|85.31|JH 835 Gumla|23.04|84.54|JH 841 Chhapra / Siwan|25.90|84.50|BR 842 Muzaffarpur|26.12|85.39|BR
+843 Sitamarhi|26.60|85.48|BR 844 Hajipur|25.69|85.21|BR 845 Champaran|26.65|84.92|BR 846 Darbhanga|26.15|85.90|BR
+847 Madhubani|26.35|86.07|BR 848 Samastipur|25.86|85.78|BR 851 Begusarai|25.42|86.13|BR 852 Saharsa|25.88|86.60|BR
+853 Naugachia|25.40|87.10|BR 854 Purnia / Katihar|25.78|87.47|BR 855 Kishanganj|26.10|87.95|BR
+"""
+_ST = {"JK": "Jammu and Kashmir", "LA": "Ladakh", "UP": "Uttar Pradesh", "RJ": "Rajasthan", "GJ": "Gujarat",
+       "MH": "Maharashtra", "GA": "Goa", "MP": "Madhya Pradesh", "CG": "Chhattisgarh", "TG": "Telangana",
+       "AP": "Andhra Pradesh", "KA": "Karnataka", "TN": "Tamil Nadu", "PY": "Puducherry", "KL": "Kerala",
+       "WB": "West Bengal", "SK": "Sikkim", "AN": "Andaman and Nicobar", "OD": "Odisha", "AS": "Assam",
+       "AR": "Arunachal Pradesh", "ML": "Meghalaya", "MN": "Manipur", "MZ": "Mizoram", "NL": "Nagaland",
+       "TR": "Tripura", "BR": "Bihar", "JH": "Jharkhand"}
+for _m in re.finditer(r"(\d{3}) ([^|]+)\|([\d.]+)\|([\d.]+)\|([A-Z]{2})", _PIN3_REST):
+    PIN3.setdefault(_m.group(1), (_m.group(2).strip(), float(_m.group(3)), float(_m.group(4)), _ST[_m.group(5)]))
+
 
 def haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
@@ -261,6 +365,7 @@ def fuzzy_place(name: str) -> Optional[Tuple[str, float, float, str]]:
     """Tolerate small misspellings in district names ('Kurukshtra'); ambiguous names are not resolved."""
     from rapidfuzz import fuzz, process
     n = re.sub(r"\s+", " ", name.lower()).strip()
+    n = re.sub(r"\s+(city|district|distt?|dist|project|cantt?\.?)$", "", n).strip()
     if n in AMBIGUOUS:
         return None
     hit = process.extractOne(n, list(PLACES), scorer=fuzz.ratio, score_cutoff=88)
