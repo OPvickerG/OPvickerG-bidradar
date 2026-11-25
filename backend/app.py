@@ -345,10 +345,12 @@ def tender_query(db: Session, f: Dict):
     if f.get("min_value"):
         q = q.where(Tender.estimated_value >= float(f["min_value"]))
     near = Tender.details["geo"]["near"].as_string()
-    if f.get("near") == "home":            # near home, plus anything whose location is not stated (never hidden)
+    if f.get("near") == "home":            # near home, plus anything whose location is not stated
         q = q.where(or_(near.is_(None), near != "no"))
     elif f.get("near") == "yes":
         q = q.where(near == "yes")
+    elif f.get("near") == "unknown":
+        q = q.where(or_(near.is_(None), near == "maybe"))
     return q
 
 
@@ -358,8 +360,8 @@ def tenders(request: Request, q: str = "", category: str = "", min_score: str = 
             near: str = "", sort: str = "score", page: int = 1, db: Session = Depends(get_db),
             user: str = Depends(require_user)):
     home = (cfg.get(db, "geography") or {}).get("home")
-    if near not in ("home", "yes", "all"):
-        near = "home" if home else "all"
+    if near not in ("home", "yes", "unknown", "all"):
+        near = "yes" if home else "all"
     f = dict(q=q, category=category, min_score=min_score, status=status, state=state, source=source,
              closing_days=closing_days, watched=watched, min_value=min_value, near=near)
     base = tender_query(db, f)
