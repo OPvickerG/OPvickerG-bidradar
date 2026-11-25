@@ -117,6 +117,56 @@ class Tender(Base):
 
     matches: Mapped[list["TenderMatch"]] = relationship(back_populates="tender", cascade="all, delete-orphan")
     documents: Mapped[list["TenderDocument"]] = relationship(back_populates="tender", cascade="all, delete-orphan")
+    # the long document text lives in its own table so listing/refresh queries never pull it (seen 25 Nov 2026:
+    # loading it with every row used up the database's 5 GB/month transfer allowance in six days)
+    text: Mapped[Optional["TenderText"]] = relationship(back_populates="tender", uselist=False,
+                                                        cascade="all, delete-orphan")
+
+
+class TenderText(Base):
+    __tablename__ = "tender_texts"
+    tender_id: Mapped[int] = mapped_column(ForeignKey("tenders.id", ondelete="CASCADE"), primary_key=True)
+    doc_text: Mapped[Optional[str]] = mapped_column(Text)          # first DOC_TEXT_KEEP characters of the bid document
+    doc_consignee: Mapped[Optional[str]] = mapped_column(Text)     # delivery/consignee sections of the WHOLE document
+    updated_at: Mapped[Optional[datetime]] = ts(True, utcnow)
+    tender: Mapped[Tender] = relationship(back_populates="text")
+
+
+def _text_row(t) -> Optional[TenderText]:
+    try:
+        return t.text
+    except Exception:              # detached / transient object without a session
+        return None
+
+
+def doc_text_of(t) -> str:
+    """Stored bid-document text of a tender ('' if none). Older rows kept it inside details."""
+    row = _text_row(t)
+    if row is not None and row.doc_text:
+        return row.doc_text
+    return (getattr(t, "details", None) or {}).get("doc_text") or ""
+
+
+def doc_consignee_of(t) -> Optional[str]:
+    """Consignee sections of the whole document; None if never stored (document read before 25 Nov 2026)."""
+    row = _text_row(t)
+    if row is not None and row.doc_consignee is not None:
+        return row.doc_consignee
+    return (getattr(t, "details", None) or {}).get("doc_consignee")
+
+
+def store_doc_text(t, text: str, consignee: str) -> None:
+    text, consignee = (text or "").replace("\x00", ""), (consignee or "").replace("\x00", "")   # Postgres refuses NUL
+    row = _text_row(t)
+    if row is None:
+        t.text = TenderText(doc_text=text, doc_consignee=consignee)
+    else:
+        row.doc_text, row.doc_consignee, row.updated_at = text, consignee, utcnow()
+    d = dict(t.details or {})
+    if "doc_text" in d or "doc_consignee" in d:
+        d.pop("doc_text", None)
+        d.pop("doc_consignee", None)
+        t.details = d
 
 
 class TenderMatch(Base):
