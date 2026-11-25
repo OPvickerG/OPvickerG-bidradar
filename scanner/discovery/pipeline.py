@@ -27,7 +27,7 @@ from notifications.notification_queue import queue as nq
 from scanner.bid_analysis.gem_document import eligibility_summary, parse_gem_bid_text, requirements_summary
 from scanner.bid_analysis.issues import missing_information, potential_issues
 from scanner.bid_analysis.relevance import score_tender
-from scanner.bid_analysis.location import locate
+from scanner.bid_analysis.location import consignee_text, locate
 from scanner.bid_analysis.summary import clean_place, summarize
 from scanner.change_detection.detector import (EVENT_TO_PREF, Change, diff_corrigenda, diff_eligibility,
                                                diff_listing, diff_outcome, state_fingerprint)
@@ -400,7 +400,8 @@ class Scan:
         state.setdefault("page", 1)
         state.setdefault("pass_started", now.isoformat())
         page = max(1, int(state["page"]) - 1)             # re-read one page: listings only ever move later
-        end = time.monotonic() + self.s.deep_crawl_minutes * 60
+        # use whatever time this scan has left (keeping 90 s to finish up), up to DEEP_CRAWL_MINUTES
+        end = min(time.monotonic() + self.s.deep_crawl_minutes * 60, self.deadline - 90)
         try:
             while time.monotonic() < end and self._time_left():
                 try:
@@ -590,6 +591,13 @@ class Scan:
         unread = [t for t in rows if (t.details or {}).get("doc_status") != "extracted"]
         cands += sorted(unread, key=lambda t: (((t.details or {}).get("geo") or {}).get("near") == "no",
                                                -t.relevance_score))
+        # documents read before 25 Nov 2026 kept only their first 20,000 characters, which can cut off the
+        # consignee list of long bids: read those again (once) so every delivery address is seen
+        reread = [t for t in rows if (t.details or {}).get("doc_status") == "extracted"
+                  and "doc_consignee" not in (t.details or {})
+                  and len((t.details or {}).get("doc_text") or "") >= DOC_TEXT_KEEP]
+        reread_ids = {t.id for t in reread}
+        cands += sorted(reread, key=lambda t: -t.relevance_score)
         done: Set[int] = set()
         for t in cands:
             if budget <= 0 or not self._time_left():
@@ -601,7 +609,8 @@ class Scan:
             for du in urls[:2]:
                 doc = db.execute(select(TenderDocument).where(TenderDocument.tender_id == t.id,
                                                               TenderDocument.url == du["url"])).scalar_one_or_none()
-                if doc is not None and doc.status != "pending":
+                if doc is not None and doc.status != "pending" and not (t.id in reread_ids and doc.status == "extracted"
+                                                                     and du["kind"] == "bid_document"):
                     retry_failed = doc.status == "failed" and doc.fetched_at and \
                         utcnow() - ensure_utc(doc.fetched_at) > timedelta(hours=6)
                     if not retry_failed:
@@ -647,6 +656,7 @@ class Scan:
                     self.event(t, c)
             d["doc_fields"] = {k: v for k, v in fields.items() if v not in (None, "", [])}
             d["doc_text"] = res.text[:DOC_TEXT_KEEP]
+            d["doc_consignee"] = consignee_text(res.text)[:8000]    # delivery sections from the WHOLE document
             d["eligibility"] = eligibility_summary(fields)
             d["requirements"] = requirements_summary(fields)
             pins = fields.get("consignee_pins") or []
@@ -993,7 +1003,7 @@ def check_bid(db: Session, number: str, adapters: Optional[Dict[str, SourceAdapt
                 pass
 
 
-GEO_VERSION = "3"
+GEO_VERSION = "4"
 
 
 def set_location(t: Tender, home: Optional[Dict]) -> None:
