@@ -26,3 +26,14 @@ def test_buses_vans_and_minibuses_are_strong_matches():
               "REPAIR OF ASHOK LEYLAND BUS", "Customized AMC/CMC for Pre-owned Products - DG Sets 40 KVA; KIRLOSKAR; "
               "CMC; customized amc cmc for pre owned products avionics carrier"]:
         assert score_tender(t, t).score >= 75, t
+
+
+def test_vehicle_repair_is_recognised_whatever_the_wording():
+    from scanner.bid_analysis.relevance import score_tender
+    for title in ("Repair of Mahindra Bolero Camper clutch and gear box", "Denting and painting of Maruti Ertiga staff car",
+                  "Wheel alignment and balancing of Tata 407 vehicles", "Periodic maintenance of MT vehicles",
+                  "Custom Bid for Services - Repair of Eicher tipper", "Servicing of Innova Crysta and Scorpio"):
+        assert score_tender(title, title).score >= 75, title
+    for title in ("Supply of Mahindra Bolero vehicle", "Purchase of bus", "Repair of steering committee hall",
+                  "Tata Steel coil supply", "Painting of office building"):
+        assert score_tender(title, title).score < 40, title

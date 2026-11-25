@@ -119,3 +119,29 @@ def test_small_radius_keeps_home_state_but_drops_far_state_only_bids():
     assert locate(_t(state="Maharashtra"), small)["near"] == "no"
     g = locate(_t(details={"doc_fields": {"consignee_pins": ["135001"]}}), small)
     assert g["near"] == "yes" and g["km"] <= 55                                   # Yamunanagar ~54 km
+
+
+def test_lumpsum_project_districts_city_suffix_and_spaced_headings_are_read():
+    small = dict(HOME, radius_km=55)
+    vel = "/Consignee Reporting/Officer /Address Quantity /Additional Requirement 1 ***********Vellore Project /Lumpsum Based N/A"
+    assert locate(_t(details={"doc_text": vel}), small)["near"] == "no"
+    thane = "/Consignee Reporting/Officer /Address Quantity 1 ***********THANE CITY Project /Lumpsum Based N/A"
+    assert locate(_t(details={"doc_text": thane}), small)["near"] == "no"
+    spaced = ("Item/Category Consigne e/Reporti ng Officer Consignee Address Q u a nt it y LAN System Amrendra Kumar "
+              "MAZAGON DOCK SHIPBUILDERS LIMITED, DOCKYARD ROAD, MUMBAI - 400010 400010 1")
+    g = locate(_t(details={"doc_text": spaced}), small)
+    assert g["basis"] == "delivery PIN 400010" and g["place"] == "Mumbai" and g["near"] == "no"
+
+
+def test_every_pin_area_gives_a_place_not_just_a_state():
+    for text, place in (("1 Shikha Sharma 207246,NAGAR PANCHAYAT SIRPURA KASGANJ Project", "Etah / Kasganj"),
+                        ("1 Subimal Das 700015,14, Beliaghata Road 1 N/A", "Kolkata"),
+                        ("1 Leo Mathews Kurian 690571,27th Bn, ITB Police Force", "Kollam / Alappuzha")):
+        g = locate(_t(details={"doc_text": "/Consignee Reporting/Officer /Address " + text}), HOME)
+        assert g["place"] == place and g["near"] == "no"
+
+
+def test_delivery_sections_from_the_whole_document_are_used():
+    head = "x " * 15000                      # the stored text is cut at 20,000 characters...
+    t = _t(details={"doc_text": head[:20000], "doc_consignee": "/Consignee Reporting/Officer /Address 1 ****133001,Ambala 1"})
+    assert locate(t, HOME)["near"] == "yes"  # ...but the consignee sections of the whole document are kept
