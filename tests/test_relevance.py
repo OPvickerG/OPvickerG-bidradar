@@ -37,3 +37,13 @@ def test_vehicle_repair_is_recognised_whatever_the_wording():
     for title in ("Supply of Mahindra Bolero vehicle", "Purchase of bus", "Repair of steering committee hall",
                   "Tata Steel coil supply", "Painting of office building"):
         assert score_tender(title, title).score < 40, title
+
+
+def test_goods_orders_and_lab_generators_are_not_repair_work():
+    from scanner.bid_analysis.relevance import score_tender
+    ply = ("Ply wood", "Ply Size 8 ft by 4 ft by 18mm,Nails Size 2 inch,Welding rod,Cutting Blade 4 inch,Grinding disc 4 inch")
+    assert score_tender(*ply, procurement_type="product").score <= 35
+    cal = "Custom Bid for Services - Calibration of Function Generator and Signal Generator, servicing of test equipment"
+    assert score_tender(cal, cal).score < 40
+    dg = "Repair and servicing of 125 KVA diesel generator"
+    assert score_tender(dg, dg, procurement_type="service").score >= 75
