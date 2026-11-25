@@ -132,9 +132,10 @@ class Scan:
         terms = list(dict.fromkeys(t for m in self.models if m.enabled for t in m.discovery))
         sources = db.execute(select(Source).where(Source.enabled.is_(True)).order_by(Source.id)).scalars().all()
         try:
-            for src in sources:
-                self.discover(src, terms)
+            for src in sources:            # newest bids and bids delivering near home first: that is what matters most
                 self.sweep(src)
+                self.local_sweep(src)
+                self.discover(src, terms)
             self.analyse_documents()
             self.refresh_tracked()
             self.close_expired()
@@ -270,7 +271,96 @@ class Scan:
         finally:
             cfg.put(self.db, "sweep_seen", {"ids": ids[-SWEEP_MEMORY:]})
 
-    def _consider(self, raws: List[RawTender], st: Dict, counter: Dict) -> None:
+    def local_cities(self, a) -> List[List]:
+        """GeM consignee cities within reach of home, nearest first: [[gem_state, gem_city, km], ...].
+        Built from GeM's own city lists for the states around home; rebuilt daily or when home changes."""
+        from core.places import find_places, fuzzy_place, haversine_km
+        from scanner.bid_analysis.location import _near_states
+        home = (cfg.get(self.db, "geography") or {}).get("home") or {}
+        if home.get("lat") is None:
+            return []
+        r = float(home.get("radius_km") or 250)
+        key = f"{home.get('lat')}:{home.get('lon')}:{r}:{utcnow().date().isoformat()}"
+        state = dict(cfg.get(self.db, "local_sweep") or {})
+        if state.get("key") == key and state.get("cities"):
+            return state["cities"]
+        hp = (float(home["lat"]), float(home["lon"]))
+        out, seen = [], set()
+        for s in _near_states(home):
+            gem_state = s.upper().replace(" AND ", " & ")
+            for city in a.consignee_cities(gem_state):
+                hit = (find_places(city, s) or [None])[0] or fuzzy_place(city)
+                if not hit or hit[3] != s:
+                    continue
+                km = round(haversine_km(hp, (hit[1], hit[2])))
+                if km <= r + 15 and (gem_state, city.upper()) not in seen:
+                    seen.add((gem_state, city.upper()))
+                    out.append([gem_state, city, km])
+        out.sort(key=lambda c: c[2])
+        if out:
+            prev = state.get("cities") or []
+            if [c[:2] for c in prev] != [c[:2] for c in out]:
+                state.update(i=0, page=1)
+            state.update(key=key, cities=out)
+            cfg.put(self.db, "local_sweep", state)
+        return out
+
+    def local_sweep(self, src: Source) -> None:
+        """Read EVERY ongoing bid that delivers to a city near home (GeM's public consignee-location search), a
+        time-boxed slice per scan with a cursor, nearest city first. This finds nearby bids whatever their title
+        says, including ones no keyword search would match. Only bids that could match a category are stored."""
+        a = self.adapter(src.key)
+        fetch = getattr(a, "fetch_consignee", None)
+        if fetch is None or self.s.local_sweep_minutes <= 0 or src.key in self.down:
+            return
+        ls = self.stats.setdefault("local", {"pages": 0, "checked": 0, "kept": 0, "cities": 0})
+        st = self.stats["sources"].setdefault(src.key, {"pages": 0, "listings": 0, "new": 0, "changed": 0,
+                                                         "status": "ok"})
+        try:
+            cities = self.local_cities(a)
+        except SourceUnavailable as e:
+            self.error("local_sweep", f"source unavailable: {e}", src.key)
+            return
+        except Exception as e:
+            self.error("local_sweep", f"city list: {type(e).__name__}: {e}", src.key)
+            return
+        if not cities:
+            return
+        state = dict(cfg.get(self.db, "local_sweep") or {})
+        i, page = int(state.get("i", 0)), int(state.get("page", 1))
+        if i >= len(cities):
+            i, page = 0, 1
+        end = time.monotonic() + self.s.local_sweep_minutes * 60
+        visited = 0
+        try:
+            while time.monotonic() < end and self._time_left() and visited <= len(cities):
+                gem_state, city, _km = cities[i]
+                try:
+                    raws, total = fetch(gem_state, city, page)
+                except SourceUnavailable as e:
+                    self.error("local_sweep", f"source unavailable: {e}", src.key)
+                    break
+                except Exception as e:
+                    self.error("local_sweep", f"{type(e).__name__}: {e}", src.key, detail=f"{city} page={page}")
+                    break
+                ls["pages"] += 1
+                if raws:
+                    self._consider(raws, st, ls, min_score=self.s.local_keep_min_score)
+                if not raws or page * 10 >= total:
+                    ls["cities"] += 1
+                    visited += 1
+                    i, page = i + 1, 1
+                    if i >= len(cities):           # one full pass of every nearby city
+                        i = 0
+                        state["passes"] = int(state.get("passes", 0)) + 1
+                        state["last_pass_finished"] = utcnow().isoformat()
+                else:
+                    page += 1
+        finally:
+            state.update(i=i, page=page, updated=utcnow().isoformat())
+            cfg.put(self.db, "local_sweep", state)
+
+    def _consider(self, raws: List[RawTender], st: Dict, counter: Dict, min_score: Optional[int] = None) -> None:
         """Score listings from the sweep/crawl. Known tenders always go through change detection; unknown ones are
         stored only if they could match a category (documents of stored ones are then read, which can raise the score)."""
         self._prefetch(raws)
@@ -281,7 +371,7 @@ class Scan:
             counter["checked"] += 1
             if self._known.get(key) is None:
                 r = score_tender(raw.title, raw.description or "", "", raw.procurement_type, self.models, self.embedder)
-                if r.score < self.s.sweep_keep_min_score:
+                if r.score < (self.s.sweep_keep_min_score if min_score is None else min_score):
                     continue
                 counter["kept"] += 1
             outcome = self.upsert(raw)
@@ -431,7 +521,11 @@ class Scan:
         if raw.location:
             t.location = raw.location
         d = dict(t.details or {})
-        d["listing"] = {k: v for k, v in (raw.extra or {}).items() if k != "flags"}
+        d["listing"] = {k: v for k, v in (raw.extra or {}).items() if k not in ("flags", "consignee")}
+        con = (raw.extra or {}).get("consignee")
+        if con:                                 # GeM says this bid delivers to that city
+            cl = [c for c in (d.get("consignees") or []) if c != con]
+            d["consignees"] = cl + [con]
         d["flags"] = (raw.extra or {}).get("flags")
         docs = {u: k for k, u in raw.documents}
         d["document_urls"] = [{"kind": k, "url": u} for u, k in docs.items()]
@@ -487,13 +581,17 @@ class Scan:
     def analyse_documents(self):
         db = self.db
         budget = self.s.max_documents_per_scan
-        cands = [t for t in self.touched.values() if t.relevance_score >= DOC_ANALYSIS_MIN_SCORE]
-        cands += db.execute(select(Tender).where(Tender.relevance_score >= DOC_ANALYSIS_MIN_SCORE,
-                                                 Tender.status == "active",
-                                                 Tender.details.is_not(None))
-                            .order_by(Tender.relevance_score.desc()).limit(200)).scalars().all()
+        cands = sorted((t for t in self.touched.values() if t.relevance_score >= DOC_ANALYSIS_MIN_SCORE),
+                       key=lambda x: -x.relevance_score)
+        # every open match whose document is not read yet (not only the top 200: seen 25 Nov 2026, 85 matches had
+        # waited days); location unknown / nearby before known-far, then by score
+        rows = db.execute(select(Tender).where(Tender.relevance_score >= DOC_ANALYSIS_MIN_SCORE,
+                                               Tender.status == "active", Tender.details.is_not(None))).scalars().all()
+        unread = [t for t in rows if (t.details or {}).get("doc_status") != "extracted"]
+        cands += sorted(unread, key=lambda t: (((t.details or {}).get("geo") or {}).get("near") == "no",
+                                               -t.relevance_score))
         done: Set[int] = set()
-        for t in sorted(cands, key=lambda x: -x.relevance_score):
+        for t in cands:
             if budget <= 0 or not self._time_left():
                 break
             if t.id in done:
