@@ -803,6 +803,7 @@ def tender_json(t: Tender, full: bool = False) -> Dict:
     if full:
         det = dict(t.details or {})
         det.pop("doc_text", None)
+        det.pop("doc_consignee", None)
         d.update(match_explanation=t.match_explanation, details=det,
                  matches=[{"category": m.category_code, "score": m.score, "matched": m.matched_phrases,
                            "explanation": m.explanation} for m in t.matches])
