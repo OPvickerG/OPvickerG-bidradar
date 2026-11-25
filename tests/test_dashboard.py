@@ -150,8 +150,11 @@ def test_home_town_setting_area_filter_and_nearest_sort(client):
     r = client.post("/settings/geography", data={"home": "karnal", "radius_km": "200", "csrf": csrf(client, "/settings")},
                     follow_redirects=True)
     assert "within 200 km of Karnal" in r.text and "3 open tenders re-measured" in r.text
-    page = client.get("/tenders").text
-    assert "vehicles near" in page and "vehicles somewhere" in page and "vehicles far" not in page
+    page = client.get("/tenders").text                     # default: confirmed near home only
+    assert "vehicles near" in page and "vehicles somewhere" not in page and "vehicles far" not in page
+    both = client.get("/tenders?near=home").text
+    assert "vehicles near" in both and "vehicles somewhere" in both and "vehicles far" not in both
+    assert "vehicles somewhere" in client.get("/tenders?near=unknown").text
     assert "Chandigarh" in page and "km" in page
     assert "vehicles far" in client.get("/tenders?near=all").text
     only = client.get("/tenders?near=yes").text

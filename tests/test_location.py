@@ -69,7 +69,7 @@ def test_home_lookup_label_and_distance_math():
     assert geo_label({}) == ""
 
 
-def test_alerts_skip_only_tenders_known_to_be_far(db_url):
+def test_alerts_only_for_work_confirmed_near_home(db_url):
     from backend import settings_service as cfg
     from database.session import session_scope
     from notifications.notification_queue.queue import tender_qualifies
@@ -78,7 +78,7 @@ def test_alerts_skip_only_tenders_known_to_be_far(db_url):
         far = _t(external_id="F", relevance_score=95, best_category="F", details={"geo": {"near": "no"}})
         near = _t(external_id="N", relevance_score=95, best_category="F", details={"geo": {"near": "yes"}})
         unknown = _t(external_id="U", relevance_score=95, best_category="F", details={"geo": {"near": "maybe"}})
-        assert not tender_qualifies(db, far) and tender_qualifies(db, near) and tender_qualifies(db, unknown)
+        assert tender_qualifies(db, near) and not tender_qualifies(db, far) and not tender_qualifies(db, unknown)
 
 
 def test_pin_followed_by_comma_is_read():
@@ -97,8 +97,14 @@ def test_unknown_far_district_is_outside_but_unknown_near_district_is_kept():
     far = "/Consignee Reporting/Officer /Address 1 ***********Purulia 1 N/A West Bengal"
     g = locate(_t(details={"doc_text": far}), HOME)
     assert g["near"] == "no" and g["state"] == "West Bengal"
+    # every place around home is in the gazetteer, so an unknown named district with no state is far away
     vague = "/Consignee Reporting/Officer /Address 1 ***********Somewhere 1 N/A"
-    assert locate(_t(details={"doc_text": vague}), HOME)["near"] == "maybe"     # no state: never hidden
+    assert locate(_t(details={"doc_text": vague}), HOME)["near"] == "no"
+    # ...but an unknown district in a state that reaches the home area is never hidden
+    hr = "/Consignee Reporting/Officer /Address 1 ***********Somewhere 1 N/A Haryana"
+    assert locate(_t(details={"doc_text": hr}), HOME)["near"] == "maybe"
+    army = "/Consignee Reporting/Officer /Address /Quantity /Delivery Days 1 ***********Rajauri 1 15 Camshaft Bearing"
+    assert locate(_t(details={"doc_text": army}), HOME)["near"] == "no"
 
 
 def test_state_in_consignee_text_beats_buyer_state():

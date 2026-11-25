@@ -224,3 +224,35 @@ def test_helper_that_cannot_reach_gem_leaves_the_slot_to_the_server(gem, run_sca
     assert res2["status"] == "succeeded"                       # the server re-ran the same slot
     with session_scope() as db:
         assert len(db.execute(select(ScanExecution)).scalars().all()) == 1
+
+
+# --- every bid delivering near home (GeM consignee-location search) --------------------------------------------
+def test_local_sweep_reads_every_bid_delivering_near_home(gem, run_scan, monkeypatch):
+    monkeypatch.setenv("LOCAL_SWEEP_MINUTES", "2")
+    reset_settings()
+    with session_scope() as db:
+        from database.seed.loader import seed
+        seed(db)
+        cfg.put(db, "geography", {"states": [], "pin_prefixes": [],
+                                  "home": {"name": "Testtown", "lat": 30.37, "lon": 76.8, "radius_km": 55}})
+    gem.cities = {"HARYANA": ["AMBALA", "KARNAL", "SIRSA"], "CHANDIGARH": ["CHANDIGARH"]}
+    ambala = [gem_doc(7300000 + i, f"Office item {i}") for i in range(12)]
+    ambala.append(gem_doc(7300100, "Custom Bid for Services - Repair and servicing of staff car and bus"))
+    gem.consignee = {("HARYANA", "AMBALA"): ambala,
+                     ("CHANDIGARH", "CHANDIGARH"): [gem_doc(7300200, "Repair of DG set 125 KVA")],
+                     ("HARYANA", "SIRSA"): [gem_doc(7300300, "Repair of vehicles at Sirsa")]}
+    res = run_scan({"gem_bidplus": gem.adapter()})
+    ls = res["stats"]["local"]
+    assert ls["checked"] >= 14 and ls["cities"] >= 2
+    assert not any("SIRSA" in c for c in gem.calls)              # Sirsa is ~200 km away: never asked for
+    with session_scope() as db:
+        rows = {t.external_id: t for t in db.execute(select(Tender)).scalars()}
+        st = cfg.get(db, "local_sweep")
+        assert [c[1] for c in st["cities"]] == ["AMBALA", "CHANDIGARH"]       # Karnal (~76 km) is outside 55+15
+        assert st.get("passes", 0) >= 1
+    car = next(t for t in rows.values() if "staff car" in t.title)
+    assert car.details["consignees"] == [{"city": "AMBALA", "state": "HARYANA"}]
+    assert car.details["geo"]["near"] == "yes" and car.details["geo"]["basis"] == "GeM consignee city"
+    dg = next(t for t in rows.values() if "DG set" in t.title)
+    assert dg.details["geo"]["place"] == "Chandigarh" and dg.details["geo"]["near"] == "yes"
+    assert not any("Office item" in t.title for t in rows.values())        # unrelated bids are not stored
