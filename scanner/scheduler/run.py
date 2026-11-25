@@ -125,6 +125,21 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
             result["status"] = "skipped_locked"
             log(logger, logging.WARNING, "scan skipped: lock held", **result)
             return result
+        # renew the lease from the moment it is taken: re-scoring / re-measuring every stored tender after a rules
+        # change can take minutes on a slow link (seen 25 Nov 2026: 11 min from the Mac, the lease ran out mid-way)
+        lost, done = threading.Event(), threading.Event()
+
+        def renew_lease():
+            while not done.wait(60):
+                try:
+                    with session_scope() as hb:
+                        if not lock.heartbeat(hb, wid, s.scan_lease_minutes):
+                            lost.set()
+                            return
+                except Exception as e:
+                    log(logger, logging.WARNING, "lease renewal failed", error=str(e)[:200])
+
+        threading.Thread(target=renew_lease, daemon=True, name="lease").start()
         try:
             seed(db)                       # idempotent; runs under the lock so workers never race
             from scanner.discovery.pipeline import rescore_if_rules_changed
@@ -135,6 +150,7 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
             ex = _claim_execution(db, slot, trigger, wid, holding_lock=True)
             if ex is None:
                 db.commit()
+                done.set()
                 lock.release(db, wid)
                 result["status"] = "already_ran"
                 log(logger, logging.INFO, "slot already processed", **result)
@@ -144,6 +160,7 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
                 ex.status, ex.finished_at = "skipped_paused", utcnow()
                 ex.error = f"Monitoring paused{': ' + mon['paused_reason'] if mon.get('paused_reason') else ''}"
                 db.commit()
+                done.set()
                 lock.release(db, wid)
                 result["status"] = "skipped_paused"
                 return result
@@ -151,23 +168,11 @@ def run_once(trigger: str = "scheduler", adapters=None, sender=None, now=None,
             ex_id = ex.id
         except Exception:
             db.rollback()
+            done.set()
             lock.release(db, wid)
             raise
 
     status, err, stats = "failed", None, {}
-    lost, done = threading.Event(), threading.Event()
-
-    def renew_lease():                 # keep the lease short but alive while this scan is genuinely running
-        while not done.wait(60):
-            try:
-                with session_scope() as hb:
-                    if not lock.heartbeat(hb, wid, s.scan_lease_minutes):
-                        lost.set()
-                        return
-            except Exception as e:
-                log(logger, logging.WARNING, "lease renewal failed", error=str(e)[:200])
-
-    threading.Thread(target=renew_lease, daemon=True, name="lease").start()
     try:
         with session_scope() as db:
             ex = db.get(ScanExecution, ex_id)
