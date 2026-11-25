@@ -118,8 +118,20 @@ def join_fields(title: Optional[str], description: Optional[str]) -> str:
     return t + SEP + d
 
 
+# laboratory / process "generators" are not DG sets: 'Calibration of Function Generator', 'PSA oxygen generator'
+_INSTRUMENT_GEN_RX = re.compile(r"(?i)\b(signal|function|pulse|waveform|arbitrary|rf|noise|frequency|sweep|pattern|tone|"
+                                r"clock|test|smoke|fog|foam|ion|ozone|oxygen|nitrogen|hydrogen|steam|x-?ray|ultrasonic|"
+                                r"ultrasound|word|report|qr|code|number|random|vapou?r|bubble|aerosol)\s+generators?\b")
+
+
+def _strip_instrument_generators(text: str) -> str:
+    return _INSTRUMENT_GEN_RX.sub(" instrument ", text or "")
+
+
 def score_category(model: CategoryModel, title: str, description: str = "", document_text: str = "",
                    procurement_type: Optional[str] = None, embedding_sim: Optional[float] = None) -> CategoryScore:
+    title, description = _strip_instrument_generators(title), _strip_instrument_generators(description)
+    document_text = _strip_instrument_generators(document_text) if document_text else document_text
     main = join_fields(title, description)
     lex = lexical_hits(model, main)
     con = best_concept_hit(model, main)
@@ -167,6 +179,9 @@ def score_category(model: CategoryModel, title: str, description: str = "", docu
         total -= 45
         penalties.append("unrelated context " + ", ".join(f"'{n}'" for n in lex.negatives[:3]))
     scope_caps = scope_penalties(title, description)
+    if procurement_type == "product" and not _REPAIR_WORDS_RX.search(item_text(title, description)):
+        # a GeM goods purchase with no repair wording ('Grinding disc 4 inch' in a plywood order) is not service work
+        scope_caps.append((35, "goods purchase, no repair or service work"))
     for _, reason in scope_caps:
         penalties.append(reason)
     norm_main = normalise(main)
