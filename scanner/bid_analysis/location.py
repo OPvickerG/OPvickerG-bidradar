@@ -29,10 +29,14 @@ STATE_MARGIN_KM = 50
 def _margin(radius_km: float) -> float:
     """Extra distance allowed for state-only bids: 50 km, or half the radius when the radius is small."""
     return min(STATE_MARGIN_KM, radius_km / 2)
-_CONSIGNEE_RX = re.compile(r"(Consignees?/Reporting Officer|Consignee Reporting/Officer|/Delivery Days)", re.I)
-_PIN_RX = re.compile(r"(?<![\d.,])([1-8]\d{5})(?![\d.])(?!,\d)")     # '825301,ZULU PARK' counts; '100000.00' does not
+# GeM's PDF text sometimes breaks words ('Consigne e/Reporti ng Officer'), so the headings allow stray spaces
+_CONSIGNEE_RX = re.compile(r"(C ?o ?n ?s ?i ?g ?n ?e ?e ?s? ?/ ?R ?e ?p ?o ?r ?t ?i ?n ?g|Consignee Reporting/Officer|/Delivery Days|"
+                           r"Consignee\s+Address|Delivery\s+Address|Place\s+of\s+(?:Delivery|Work|Performance|Execution|Supply)|"
+                           r"Location\s+of\s+(?:Work|Site|Delivery)|Site\s+Address)", re.I)
+# '825301,ZULU PARK' and '690571,27th Bn' count; '100000.00' and '1,00,000' style amounts do not
+_PIN_RX = re.compile(r"(?<![\d.,])([1-8]\d{5})(?![\d.])(?!,\d{3}\b)")
 # GeM masks consignee street addresses but leaves the district: '1 ***********South Goa 1 N/A', 'Dist - Purulia'
-_DISTRICT_RX = re.compile(r"\*{4,}\s*([A-Za-z][A-Za-z .()&-]{1,40}?)\s+\d|\bDist(?:rict)?\s*[-:.]\s*([A-Za-z][A-Za-z ]{2,30}?)(?=[,./]|\s+[A-Z][a-z]+\s*/|\s+Project|$)")
+_DISTRICT_RX = re.compile(r"\*{4,}\s*([A-Za-z][A-Za-z .()&-]{1,40}?)\s+(?:\d|Project\b|/|N/A\b|Lumpsum\b)|\bDist(?:rict)?\s*[-:.]\s*([A-Za-z][A-Za-z ]{2,30}?)(?=[,./]|\s+[A-Z][a-z]+\s*/|\s+Project|$)")
 
 
 def consignee_text(doc_text: Optional[str]) -> str:
@@ -58,7 +62,7 @@ def locate(t, home: Optional[Dict] = None) -> Dict:
     d = t.details or {}
     f = d.get("doc_fields") or {}
     hp = _home(home)
-    cons = consignee_text(d.get("doc_text"))
+    cons = d.get("doc_consignee") or consignee_text(d.get("doc_text"))
     pins: List[str] = list(dict.fromkeys((f.get("consignee_pins") or []) + _PIN_RX.findall(cons)))
     pins = [p for p in pins if state_from_pin(p)]
     hint = t.state or next((state_from_pin(p) for p in pins), None) or state_from_text(cons, f.get("office"))
@@ -75,7 +79,8 @@ def locate(t, home: Optional[Dict] = None) -> Dict:
             candidates.append((name, la, lo, st, f"delivery PIN {p}"))
     if not candidates:
         candidates = [(n, la, lo, st, "delivery place in bid document") for n, la, lo, st in find_places(cons, hint)]
-    districts = [x.strip() for m in _DISTRICT_RX.findall(cons) for x in m if x and x.strip()]
+    districts = [re.sub(r"(?i)\s+(city|district|distt?|project)$", "", x.strip())
+                 for m in _DISTRICT_RX.findall(cons) for x in m if x and x.strip()]
     if not candidates:
         for dname in districts:
             fp = fuzzy_place(dname)
