@@ -14,8 +14,9 @@
   <label>Status<select name="status"><option value="">Any</option>
     {% for s in ['active','closed','in_evaluation','awarded','cancelled'] %}<option value="{{ s }}" {{ 'selected' if f.status == s }}>{{ s|replace('_',' ') }}</option>{% endfor %}</select></label>
   <label>Area<select name="near">
-    {% if home %}<option value="home" {{ 'selected' if f.near == 'home' }}>Near {{ home.name }} ({{ home.radius_km }} km) + location not stated</option>
-    <option value="yes" {{ 'selected' if f.near == 'yes' }}>Only confirmed within {{ home.radius_km }} km</option>{% endif %}
+    {% if home %}<option value="yes" {{ 'selected' if f.near == 'yes' }}>Within {{ home.radius_km }} km of {{ home.name }}</option>
+    <option value="unknown" {{ 'selected' if f.near == 'unknown' }}>Location not stated yet</option>
+    <option value="home" {{ 'selected' if f.near == 'home' }}>Both of the above</option>{% endif %}
     <option value="all" {{ 'selected' if f.near == 'all' }}>All India</option></select></label>
   <label>State<select name="state"><option value="">All India</option>
     {% for s in states %}<option {{ 'selected' if f.state == s }}>{{ s }}</option>{% endfor %}</select></label>
