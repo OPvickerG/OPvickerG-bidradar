@@ -280,6 +280,18 @@ categories:
       - ambulance repair
       - truck repair
       - bus repair
+      - van repair
+      - minibus
+      - mini bus
+      - staff car
+      - passenger vehicle
+      - school bus
+      - tata sumo
+      - force traveller
+      - tempo traveller
+      - maruti
+      - eicher
+      - ashok leyland
     discovery:
       - vehicle repair
       - repair of vehicle
@@ -289,6 +301,6 @@ categories:
       - genset
       - diesel generator
       - generator repair
-    objects: [vehicle, vehicles, car, cars, automobile, motor vehicle, truck, bus, jeep, gypsy, ambulance, tractor, dg set, generator, genset, diesel generator, generating set, alternator, engine]
+    objects: [vehicle, vehicles, car, cars, automobile, motor vehicle, truck, trucks, lorry, bus, buses, minibus, van, vans, jeep, gypsy, ambulance, tractor, dg set, generator, genset, diesel generator, generating set, alternator, engine]
     actions: [repair, repairs, overhaul, overhauling, servicing, service, maintenance, amc, cmc, reconditioning, recondition, rectification, breakdown]
     negatives: [hiring of vehicle, vehicle hiring, cab hiring, taxi hiring, bus hiring, hiring of car, rental, on hire, purchase of vehicle, vehicle insurance, parking, washing only, transportation service, goods transport, fuel supply, petrol, tyre supply, battery supply, generator hiring, dg set hiring, rent of dg]
